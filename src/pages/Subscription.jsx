@@ -68,8 +68,44 @@ const PLANS = [
   },
 ];
 
-// ─── CURRENT PLAN (mock) ──────────────────────────────────────────────────────
 const CURRENT_PLAN = "pro";
+
+// ─── RESPONSIVE STYLES ────────────────────────────────────────────────────────
+const styles = `
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+  }
+  .plans-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+  .faq-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 10px;
+  }
+  .billing-table-wrap {
+    overflow-x: auto;
+  }
+  @media (max-width: 640px) {
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .plans-grid {
+      grid-template-columns: 1fr;
+    }
+    .faq-grid {
+      grid-template-columns: 1fr;
+    }
+    .plan-card-popular {
+      transform: scale(1) !important;
+    }
+  }
+`;
 
 // ─── STAT CARD ────────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color }) {
@@ -84,8 +120,14 @@ function StatCard({ label, value, sub, color }) {
       flexDirection: "column",
       gap: "6px",
     }}>
-      <p style={{ fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: t.textMuted, fontFamily: "'DM Sans',sans-serif" }}>{label}</p>
-      <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "22px", fontWeight: 900, color: color || t.textPrimary, letterSpacing: "-0.03em", lineHeight: 1 }}>{value}</p>
+      <p style={{
+        fontSize: "10px", fontWeight: 600, textTransform: "uppercase",
+        letterSpacing: "0.1em", color: t.textMuted, fontFamily: "'DM Sans',sans-serif",
+      }}>{label}</p>
+      <p style={{
+        fontFamily: "'Syne',sans-serif", fontSize: "22px", fontWeight: 900,
+        color: color || t.textPrimary, letterSpacing: "-0.03em", lineHeight: 1,
+      }}>{value}</p>
       {sub && <p style={{ fontSize: "11px", color: t.textMuted }}>{sub}</p>}
     </div>
   );
@@ -96,14 +138,14 @@ function Check({ included, color }) {
   const { t } = useTheme();
   if (included) {
     return (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
         <circle cx="8" cy="8" r="8" fill={color + "22"} />
         <path d="M5 8l2 2 4-4" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     );
   }
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
       <circle cx="8" cy="8" r="8" fill={t.borderLight} />
       <path d="M5.5 10.5l5-5M10.5 10.5l-5-5" stroke={t.textMuted} strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
@@ -117,23 +159,29 @@ function PlanCard({ plan, billing, isCurrent }) {
   const savings = Math.round(((plan.monthlyPrice - plan.yearlyPrice) / plan.monthlyPrice) * 100);
 
   return (
-    <div style={{
-      position: "relative",
-      background: t.bgCard,
-      border: `1.5px solid ${plan.popular ? plan.color + "60" : t.border}`,
-      borderRadius: "20px",
-      padding: "28px 24px",
-      display: "flex",
-      flexDirection: "column",
-      gap: "0",
-      transition: "transform 0.2s ease, box-shadow 0.2s ease",
-      boxShadow: plan.popular ? `0 0 40px ${plan.color}18` : "none",
-      transform: plan.popular ? "scale(1.02)" : "scale(1)",
-    }}
-    onMouseEnter={e => { e.currentTarget.style.transform = plan.popular ? "scale(1.04)" : "scale(1.02)"; e.currentTarget.style.boxShadow = `0 8px 32px ${plan.color}22`; }}
-    onMouseLeave={e => { e.currentTarget.style.transform = plan.popular ? "scale(1.02)" : "scale(1)"; e.currentTarget.style.boxShadow = plan.popular ? `0 0 40px ${plan.color}18` : "none"; }}
+    <div
+      className={plan.popular ? "plan-card-popular" : ""}
+      style={{
+        position: "relative",
+        background: t.bgCard,
+        border: `1.5px solid ${plan.popular ? plan.color + "60" : t.border}`,
+        borderRadius: "20px",
+        padding: "28px 24px",
+        display: "flex",
+        flexDirection: "column",
+        transition: "transform 0.2s ease, box-shadow 0.2s ease",
+        boxShadow: plan.popular ? `0 0 40px ${plan.color}18` : "none",
+        transform: plan.popular ? "scale(1.02)" : "scale(1)",
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.transform = plan.popular ? "scale(1.04)" : "scale(1.02)";
+        e.currentTarget.style.boxShadow = `0 8px 32px ${plan.color}22`;
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.transform = plan.popular ? "scale(1.02)" : "scale(1)";
+        e.currentTarget.style.boxShadow = plan.popular ? `0 0 40px ${plan.color}18` : "none";
+      }}
     >
-
       {/* Popular Badge */}
       {plan.popular && (
         <div style={{
@@ -169,17 +217,26 @@ function PlanCard({ plan, billing, isCurrent }) {
         }}>
           <span style={{ color: plan.color }}>{plan.icon}</span>
         </div>
-        <h3 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: "18px", color: t.textPrimary, marginBottom: "4px" }}>{plan.name}</h3>
+        <h3 style={{
+          fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: "18px",
+          color: t.textPrimary, marginBottom: "4px",
+        }}>{plan.name}</h3>
         <p style={{ fontSize: "12px", color: t.textMuted }}>{plan.tagline}</p>
       </div>
 
       {/* Price */}
       <div style={{ marginBottom: "24px" }}>
         <div style={{ display: "flex", alignItems: "flex-end", gap: "4px" }}>
-          <span style={{ fontFamily: "'Syne',sans-serif", fontSize: "36px", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.04em", lineHeight: 1 }}>
+          <span style={{
+            fontFamily: "'Syne',sans-serif", fontSize: "36px", fontWeight: 900,
+            color: t.textPrimary, letterSpacing: "-0.04em", lineHeight: 1,
+          }}>
             ₹{price.toLocaleString("en-IN")}
           </span>
-          <span style={{ fontSize: "12px", color: t.textMuted, marginBottom: "4px", fontFamily: "'DM Sans',sans-serif" }}>/mo</span>
+          <span style={{
+            fontSize: "12px", color: t.textMuted,
+            marginBottom: "4px", fontFamily: "'DM Sans',sans-serif",
+          }}>/mo</span>
         </div>
         {billing === "yearly" && (
           <p style={{ fontSize: "11px", color: plan.color, marginTop: "4px", fontWeight: 600 }}>
@@ -198,7 +255,10 @@ function PlanCard({ plan, billing, isCurrent }) {
           fontWeight: 700,
           fontFamily: "'DM Sans',sans-serif",
           cursor: isCurrent ? "default" : "pointer",
-          border: isCurrent ? `1.5px solid ${t.border}` : plan.popular ? "none" : `1.5px solid ${plan.color}60`,
+          border: isCurrent
+            ? `1.5px solid ${t.border}`
+            : plan.popular ? "none"
+            : `1.5px solid ${plan.color}60`,
           background: isCurrent
             ? t.bgHover
             : plan.popular
@@ -227,7 +287,6 @@ function PlanCard({ plan, billing, isCurrent }) {
               fontSize: "12px",
               color: f.included ? t.textPrimary : t.textMuted,
               fontFamily: "'DM Sans',sans-serif",
-              textDecoration: f.included ? "none" : "none",
             }}>{f.text}</span>
           </div>
         ))}
@@ -263,7 +322,10 @@ function FaqItem({ q, a }) {
           gap: "12px",
         }}
       >
-        <span style={{ fontFamily: "'DM Sans',sans-serif", fontWeight: 600, fontSize: "13px", color: t.textPrimary }}>{q}</span>
+        <span style={{
+          fontFamily: "'DM Sans',sans-serif", fontWeight: 600,
+          fontSize: "13px", color: t.textPrimary,
+        }}>{q}</span>
         <span style={{
           color: t.textMuted,
           fontSize: "18px",
@@ -274,7 +336,13 @@ function FaqItem({ q, a }) {
         }}>+</span>
       </button>
       {open && (
-        <div style={{ padding: "0 20px 16px", fontSize: "12px", color: t.textMuted, lineHeight: 1.7, fontFamily: "'DM Sans',sans-serif" }}>
+        <div style={{
+          padding: "0 20px 16px",
+          fontSize: "12px",
+          color: t.textMuted,
+          lineHeight: 1.7,
+          fontFamily: "'DM Sans',sans-serif",
+        }}>
           {a}
         </div>
       )}
@@ -282,199 +350,228 @@ function FaqItem({ q, a }) {
   );
 }
 
+// ─── BILLING HISTORY ROWS ─────────────────────────────────────────────────────
+const BILLING_ROWS = [
+  { id: "#SUB-0012", plan: "Pro",     date: "01 May 2025", amount: "₹1,299", status: "Paid" },
+  { id: "#SUB-0011", plan: "Pro",     date: "01 Apr 2025", amount: "₹1,299", status: "Paid" },
+  { id: "#SUB-0010", plan: "Pro",     date: "01 Mar 2025", amount: "₹1,299", status: "Paid" },
+  { id: "#SUB-0009", plan: "Starter", date: "01 Feb 2025", amount: "₹499",   status: "Paid" },
+  { id: "#SUB-0008", plan: "Starter", date: "01 Jan 2025", amount: "₹499",   status: "Paid" },
+];
+
 // ─── SUBSCRIPTION PAGE ────────────────────────────────────────────────────────
 export default function Subscription() {
   const { t } = useTheme();
   const [billing, setBilling] = useState("monthly");
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
+    <>
+      <style>{styles}</style>
+      <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
 
-      {/* ── Page Header ── */}
-      <div>
-        <h1 style={{
-          fontFamily: "'Syne',sans-serif",
-          fontSize: "28px",
-          fontWeight: 900,
-          color: t.textPrimary,
-          letterSpacing: "-0.03em",
-        }}>Subscription</h1>
-        <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>
-          Manage your plan, billing, and usage
-        </p>
-      </div>
+        {/* Page Header */}
+        <div>
+          <h1 style={{
+            fontFamily: "'Syne',sans-serif",
+            fontSize: "28px",
+            fontWeight: 900,
+            color: t.textPrimary,
+            letterSpacing: "-0.03em",
+          }}>Subscription</h1>
+          <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>
+            Manage your plan, billing, and usage
+          </p>
+        </div>
 
-      {/* ── Current Plan Stats ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "12px" }}>
-        <StatCard label="Current Plan"     value="Pro"          sub="Active since Jan 2024"    color="#f97316" />
-        <StatCard label="Next Billing"     value="₹1,299"       sub="Due on 1 Jun 2025"                       />
-        <StatCard label="Invoices Used"    value="842"          sub="of unlimited this month"                  />
-        <StatCard label="Active Customers" value="218"          sub="of unlimited"                             />
-      </div>
+        {/* Current Plan Stats — 4 cols desktop, 2 cols mobile */}
+        <div className="stats-grid">
+          <StatCard label="Current Plan"     value="Pro"    sub="Active since Jan 2024"    color="#f97316" />
+          <StatCard label="Next Billing"     value="₹1,299" sub="Due on 1 Jun 2025"                       />
+          <StatCard label="Invoices Used"    value="842"    sub="of unlimited this month"                  />
+          <StatCard label="Active Customers" value="218"    sub="of unlimited"                             />
+        </div>
 
-      {/* ── Billing Toggle + Plans ── */}
-      <div>
-        {/* Toggle */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "32px" }}>
+        {/* Billing Toggle + Plans */}
+        <div>
+          {/* Toggle */}
           <div style={{
             display: "flex",
             alignItems: "center",
-            gap: "0",
-            background: t.bgCard,
-            border: `1px solid ${t.border}`,
-            borderRadius: "10px",
-            padding: "4px",
+            justifyContent: "center",
+            marginBottom: "32px",
           }}>
-            {["monthly", "yearly"].map((b) => (
-              <button
-                key={b}
-                onClick={() => setBilling(b)}
-                style={{
-                  padding: "7px 20px",
-                  borderRadius: "7px",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  fontFamily: "'DM Sans',sans-serif",
-                  transition: "all 0.15s ease",
-                  background: billing === b ? "#f97316" : "transparent",
-                  color: billing === b ? "#fff" : t.textMuted,
-                  letterSpacing: "0.02em",
-                }}
-              >
-                {b === "monthly" ? "Monthly" : "Yearly"}
-                {b === "yearly" && (
-                  <span style={{
-                    marginLeft: "6px",
-                    fontSize: "9px",
-                    fontWeight: 700,
-                    background: billing === "yearly" ? "rgba(255,255,255,0.25)" : "#22c55e22",
-                    color: billing === "yearly" ? "#fff" : "#22c55e",
-                    padding: "2px 6px",
-                    borderRadius: "99px",
-                  }}>SAVE 20%</span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Plan Cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "16px", alignItems: "start" }}>
-          {PLANS.map((plan) => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              billing={billing}
-              isCurrent={plan.id === CURRENT_PLAN}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* ── Billing History ── */}
-      <div style={{
-        background: t.bgCard,
-        border: `1px solid ${t.border}`,
-        borderRadius: "16px",
-        padding: "24px",
-      }}>
-        <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <h3 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: "15px", color: t.textPrimary }}>Billing History</h3>
-            <p style={{ fontSize: "11px", color: t.textMuted, marginTop: "2px" }}>Your recent invoices and payments</p>
-          </div>
-          <button style={{
-            padding: "7px 14px",
-            borderRadius: "8px",
-            border: `1px solid ${t.border}`,
-            background: "transparent",
-            color: t.textMuted,
-            fontSize: "11px",
-            fontWeight: 600,
-            cursor: "pointer",
-            fontFamily: "'DM Sans',sans-serif",
-          }}>
-            Download All
-          </button>
-        </div>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${t.border}` }}>
-              {["Invoice", "Plan", "Date", "Amount", "Status", ""].map((h, i) => (
-                <th key={i} style={{
-                  textAlign: "left",
-                  paddingBottom: "10px",
-                  fontSize: "10px",
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                  color: t.textMuted,
-                  fontFamily: "'DM Sans',sans-serif",
-                }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {[
-              { id: "#SUB-0012", plan: "Pro",     date: "01 May 2025", amount: "₹1,299", status: "Paid"   },
-              { id: "#SUB-0011", plan: "Pro",     date: "01 Apr 2025", amount: "₹1,299", status: "Paid"   },
-              { id: "#SUB-0010", plan: "Pro",     date: "01 Mar 2025", amount: "₹1,299", status: "Paid"   },
-              { id: "#SUB-0009", plan: "Starter", date: "01 Feb 2025", amount: "₹499",   status: "Paid"   },
-              { id: "#SUB-0008", plan: "Starter", date: "01 Jan 2025", amount: "₹499",   status: "Paid"   },
-            ].map((row, i, arr) => (
-              <tr key={row.id} style={{ borderBottom: i < arr.length - 1 ? `1px solid ${t.borderLight}` : "none" }}>
-                <td style={{ padding: "11px 0", fontFamily: "monospace", fontSize: "11px", color: t.textMuted }}>{row.id}</td>
-                <td style={{ padding: "11px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans',sans-serif" }}>{row.plan}</td>
-                <td style={{ padding: "11px 0", fontSize: "11px", color: t.textMuted }}>{row.date}</td>
-                <td style={{ padding: "11px 0", fontFamily: "'Syne',sans-serif", fontWeight: 700, color: t.textPrimary }}>{row.amount}</td>
-                <td style={{ padding: "11px 0" }}>
-                  <span style={{
-                    fontSize: "10px", fontWeight: 600,
-                    padding: "3px 9px", borderRadius: "99px",
-                    color: t.green, background: t.greenBg,
-                  }}>{row.status}</span>
-                </td>
-                <td style={{ padding: "11px 0", textAlign: "right" }}>
-                  <button style={{
-                    background: "transparent",
-                    border: `1px solid ${t.border}`,
-                    borderRadius: "6px",
-                    padding: "4px 10px",
-                    fontSize: "10px",
-                    fontWeight: 600,
-                    color: t.textMuted,
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              background: t.bgCard,
+              border: `1px solid ${t.border}`,
+              borderRadius: "10px",
+              padding: "4px",
+            }}>
+              {["monthly", "yearly"].map((b) => (
+                <button
+                  key={b}
+                  onClick={() => setBilling(b)}
+                  style={{
+                    padding: "7px 20px",
+                    borderRadius: "7px",
+                    border: "none",
                     cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: 600,
                     fontFamily: "'DM Sans',sans-serif",
-                  }}>PDF</button>
-                </td>
-              </tr>
+                    transition: "all 0.15s ease",
+                    background: billing === b ? "#f97316" : "transparent",
+                    color: billing === b ? "#fff" : t.textMuted,
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  {b === "monthly" ? "Monthly" : "Yearly"}
+                  {b === "yearly" && (
+                    <span style={{
+                      marginLeft: "6px",
+                      fontSize: "9px",
+                      fontWeight: 700,
+                      background: billing === "yearly" ? "rgba(255,255,255,0.25)" : "#22c55e22",
+                      color: billing === "yearly" ? "#fff" : "#22c55e",
+                      padding: "2px 6px",
+                      borderRadius: "99px",
+                    }}>SAVE 20%</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Plan Cards — 3 cols desktop, 1 col mobile */}
+          <div className="plans-grid">
+            {PLANS.map((plan) => (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                billing={billing}
+                isCurrent={plan.id === CURRENT_PLAN}
+              />
             ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ── FAQ ── */}
-      <div>
-        <h3 style={{
-          fontFamily: "'Syne',sans-serif",
-          fontWeight: 800,
-          fontSize: "18px",
-          color: t.textPrimary,
-          marginBottom: "16px",
-          letterSpacing: "-0.02em",
-        }}>Frequently Asked Questions</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-          {[
-            { q: "Can I change my plan anytime?",         a: "Yes! You can upgrade or downgrade at any time. Changes take effect on your next billing cycle." },
-            { q: "Is there a free trial?",                a: "We offer a 14-day free trial on all plans. No credit card required to get started." },
-            { q: "What payment methods do you accept?",   a: "We accept all major credit/debit cards, UPI, net banking, and bank transfers for annual plans." },
-            { q: "Can I cancel anytime?",                 a: "Absolutely. Cancel anytime from your dashboard. You'll retain access until the end of your billing period." },
-          ].map((f, i) => <FaqItem key={i} {...f} />)}
+          </div>
         </div>
-      </div>
 
-    </div>
+        {/* Billing History */}
+        <div style={{
+          background: t.bgCard,
+          border: `1px solid ${t.border}`,
+          borderRadius: "16px",
+          padding: "24px",
+        }}>
+          <div style={{
+            marginBottom: "16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "10px",
+          }}>
+            <div>
+              <h3 style={{
+                fontFamily: "'Syne',sans-serif", fontWeight: 700,
+                fontSize: "15px", color: t.textPrimary,
+              }}>Billing History</h3>
+              <p style={{ fontSize: "11px", color: t.textMuted, marginTop: "2px" }}>
+                Your recent invoices and payments
+              </p>
+            </div>
+            <button style={{
+              padding: "7px 14px",
+              borderRadius: "8px",
+              border: `1px solid ${t.border}`,
+              background: "transparent",
+              color: t.textMuted,
+              fontSize: "11px",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "'DM Sans',sans-serif",
+              whiteSpace: "nowrap",
+            }}>
+              Download All
+            </button>
+          </div>
+
+          {/* Scrollable table on mobile */}
+          <div className="billing-table-wrap">
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", minWidth: "480px" }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${t.border}` }}>
+                  {["Invoice", "Plan", "Date", "Amount", "Status", ""].map((h, i) => (
+                    <th key={i} style={{
+                      textAlign: "left",
+                      paddingBottom: "10px",
+                      fontSize: "10px",
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      color: t.textMuted,
+                      fontFamily: "'DM Sans',sans-serif",
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {BILLING_ROWS.map((row, i) => (
+                  <tr key={row.id} style={{
+                    borderBottom: i < BILLING_ROWS.length - 1 ? `1px solid ${t.borderLight}` : "none",
+                  }}>
+                    <td style={{ padding: "11px 0", fontFamily: "monospace", fontSize: "11px", color: t.textMuted }}>{row.id}</td>
+                    <td style={{ padding: "11px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans',sans-serif" }}>{row.plan}</td>
+                    <td style={{ padding: "11px 0", fontSize: "11px", color: t.textMuted }}>{row.date}</td>
+                    <td style={{ padding: "11px 0", fontFamily: "'Syne',sans-serif", fontWeight: 700, color: t.textPrimary }}>{row.amount}</td>
+                    <td style={{ padding: "11px 0" }}>
+                      <span style={{
+                        fontSize: "10px", fontWeight: 600,
+                        padding: "3px 9px", borderRadius: "99px",
+                        color: t.green, background: t.greenBg,
+                      }}>{row.status}</span>
+                    </td>
+                    <td style={{ padding: "11px 0", textAlign: "right" }}>
+                      <button style={{
+                        background: "transparent",
+                        border: `1px solid ${t.border}`,
+                        borderRadius: "6px",
+                        padding: "4px 10px",
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        color: t.textMuted,
+                        cursor: "pointer",
+                        fontFamily: "'DM Sans',sans-serif",
+                      }}>PDF</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* FAQ */}
+        <div>
+          <h3 style={{
+            fontFamily: "'Syne',sans-serif",
+            fontWeight: 800,
+            fontSize: "18px",
+            color: t.textPrimary,
+            marginBottom: "16px",
+            letterSpacing: "-0.02em",
+          }}>Frequently Asked Questions</h3>
+          <div className="faq-grid">
+            {[
+              { q: "Can I change my plan anytime?",       a: "Yes! You can upgrade or downgrade at any time. Changes take effect on your next billing cycle." },
+              { q: "Is there a free trial?",              a: "We offer a 14-day free trial on all plans. No credit card required to get started." },
+              { q: "What payment methods do you accept?", a: "We accept all major credit/debit cards, UPI, net banking, and bank transfers for annual plans." },
+              { q: "Can I cancel anytime?",               a: "Absolutely. Cancel anytime from your dashboard. You'll retain access until the end of your billing period." },
+            ].map((f, i) => <FaqItem key={i} {...f} />)}
+          </div>
+        </div>
+
+      </div>
+    </>
   );
 }
