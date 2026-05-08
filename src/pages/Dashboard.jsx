@@ -3,9 +3,8 @@ import {
   CategoryScale, LinearScale, BarElement, LineElement,
   PointElement, ArcElement, Tooltip, Legend, Filler,
 } from "chart.js";
-import { Bar, Doughnut, Line } from "react-chartjs-2"; 
-import { ThemeProvider, useTheme } from "../components/ThemeContext";  // ← ADD
-
+import { Bar, Doughnut, Line } from "react-chartjs-2";
+import { useTheme } from "../components/ThemeContext";
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement,
@@ -15,8 +14,8 @@ ChartJS.register(
 // ─── KPI CARD ─────────────────────────────────────────────────────────────────
 function KpiCard({ label, value, trend, trendDir, sub }) {
   const { t } = useTheme();
-  const colors    = { up: t.green,  down: t.red,  neu: t.orange  };
-  const bgs       = { up: t.greenBg,down: t.redBg,neu: t.orangeBg};
+  const colors = { up: t.green,    down: t.red,    neu: t.orange   };
+  const bgs    = { up: t.greenBg,  down: t.redBg,  neu: t.orangeBg };
 
   return (
     <div style={{
@@ -332,76 +331,105 @@ function InvoicesTable() {
   );
 }
 
+// ─── RESPONSIVE STYLES ────────────────────────────────────────────────────────
+const styles = `
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+  .charts-row-1 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .charts-row-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+  }
+  @media (max-width: 640px) {
+    .kpi-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .charts-row-1,
+    .charts-row-2 {
+      grid-template-columns: 1fr;
+    }
+  }
+`;
+
 // ─── DASHBOARD PAGE ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { t } = useTheme();
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      {/* Page Header */}
-      <div>
-        <h1 style={{
-          fontFamily: "'Syne', sans-serif",
-          fontSize: "28px",
-          fontWeight: 900,
-          color: t.textPrimary,
-          letterSpacing: "-0.03em",
-          transition: "color 0.25s ease",
-        }}>Dashboard</h1>
-        <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>
-          Welcome back — here's your business at a glance
-        </p>
+    <>
+      <style>{styles}</style>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+
+        {/* Page Header */}
+        <div>
+          <h1 style={{
+            fontFamily: "'Syne', sans-serif",
+            fontSize: "28px",
+            fontWeight: 900,
+            color: t.textPrimary,
+            letterSpacing: "-0.03em",
+            transition: "color 0.25s ease",
+          }}>Dashboard</h1>
+          <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>
+            Welcome back — here's your business at a glance
+          </p>
+        </div>
+
+        {/* KPI Row — 4 cols desktop, 2 cols mobile */}
+        <div className="kpi-grid">
+          <KpiCard label="Total Revenue"    value="₹4,82,310" trend="↑ 12.4%"   trendDir="up"   sub="vs last month"    />
+          <KpiCard label="Total Orders"     value="1,248"     trend="↑ 8.1%"    trendDir="up"   sub="this month"       />
+          <KpiCard label="Customers"        value="326"       trend="+14 new"   trendDir="neu"  sub="this month"       />
+          <KpiCard label="Pending Invoices" value="₹38,500"   trend="3 overdue" trendDir="down" sub="needs attention"  />
+        </div>
+
+        {/* Charts Row 1 — Revenue + Donut */}
+        <div className="charts-row-1">
+          <ChartCard title="Revenue Overview" sub="Monthly — last 6 months">
+            <RevenueChart />
+          </ChartCard>
+          <ChartCard title="Order Status" sub="This month breakdown">
+            <OrderDonut />
+          </ChartCard>
+        </div>
+
+        {/* Charts Row 2 — Stock, Customers, Invoices */}
+        <div className="charts-row-2">
+          <ChartCard title="Stock Levels" sub="Top 5 products">
+            <StockBar />
+          </ChartCard>
+
+          <ChartCard title="Customer Growth" sub="Last 5 months">
+            <CustomerArea />
+            <div style={{ marginTop: "12px", display: "flex", gap: "24px" }}>
+              {[["Total", "326"], ["Active", "291"], ["New", "+14"]].map(([l, v]) => (
+                <div key={l}>
+                  <p style={{ fontSize: "11px", color: t.textMuted }}>{l}</p>
+                  <p style={{
+                    fontFamily: "'Syne', sans-serif",
+                    fontWeight: 900,
+                    fontSize: "18px",
+                    color: t.textPrimary,
+                  }}>{v}</p>
+                </div>
+              ))}
+            </div>
+          </ChartCard>
+
+          <ChartCard title="Recent Invoices" sub="Latest 5 transactions">
+            <InvoicesTable />
+          </ChartCard>
+        </div>
+
       </div>
-
-      {/* KPI Row */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(4, 1fr)",
-        gap: "12px",
-      }}>
-        <KpiCard label="Total Revenue"    value="₹4,82,310" trend="↑ 12.4%"    trendDir="up"  sub="vs last month"     />
-        <KpiCard label="Total Orders"     value="1,248"      trend="↑ 8.1%"     trendDir="up"  sub="this month"        />
-        <KpiCard label="Customers"        value="326"        trend="+14 new"    trendDir="neu" sub="this month"        />
-        <KpiCard label="Pending Invoices" value="₹38,500"    trend="3 overdue"  trendDir="down" sub="needs attention"  />
-      </div>
-
-      {/* Charts Row 1 */}
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "12px" }}>
-        <ChartCard title="Revenue Overview" sub="Monthly — last 6 months">
-          <RevenueChart />
-        </ChartCard>
-        <ChartCard title="Order Status" sub="This month breakdown">
-          <OrderDonut />
-        </ChartCard>
-      </div>
-
-      {/* Charts Row 2 */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
-        <ChartCard title="Stock Levels" sub="Top 5 products">
-          <StockBar />
-        </ChartCard>
-
-        <ChartCard title="Customer Growth" sub="Last 5 months">
-          <CustomerArea />
-          <div style={{ marginTop: "12px", display: "flex", gap: "24px" }}>
-            {[["Total", "326"], ["Active", "291"], ["New", "+14"]].map(([l, v]) => (
-              <div key={l}>
-                <p style={{ fontSize: "11px", color: t.textMuted }}>{l}</p>
-                <p style={{
-                  fontFamily: "'Syne', sans-serif",
-                  fontWeight: 900,
-                  fontSize: "18px",
-                  color: t.textPrimary,
-                }}>{v}</p>
-              </div>
-            ))}
-          </div>
-        </ChartCard>
-
-        <ChartCard title="Recent Invoices" sub="Latest 5 transactions">
-          <InvoicesTable />
-        </ChartCard>
-      </div>
-    </div>
+    </>
   );
 }
