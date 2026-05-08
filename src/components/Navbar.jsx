@@ -87,7 +87,6 @@ export function Navbar({ active, setActive, sidebarOpen, setSidebarOpen }) {
           NK
         </div>
 
-        {/* Hamburger (mobile only) */}
         <button
           className="md:hidden flex flex-col gap-[5px] p-1 cursor-pointer bg-transparent border-none"
           onClick={() => setSidebarOpen(!sidebarOpen)}
