@@ -4,6 +4,11 @@ import { ThemeProvider, useTheme } from "./components/ThemeContext";
 import { Navbar, Sidebar, NAV_ITEMS } from "./components/Navbar";
 import Dashboard from "./pages/Dashboard";
 import Subscription from "./pages/Subscription";
+import Inventory from "./pages/Inventory";
+import Orders from "./pages/Orders";
+import Customers from "./pages/Customers";
+import Stocks from "./pages/Stocks";
+import Reports from "./pages/Reports";       // ← NEW
 
 // ─── PLACEHOLDER (baaki pages ke liye) ───────────────────────────────────────
 function PlaceholderPage({ name }) {
@@ -35,7 +40,6 @@ function AppInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t } = useTheme();
 
-  // Auto-close sidebar on desktop
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth >= 768) setSidebarOpen(false);
@@ -46,37 +50,24 @@ function AppInner() {
 
   return (
     <div className="min-h-screen" style={{ background: t.bgPage }}>
+      <Navbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      {/* ── Navbar ── */}
-      <Navbar
-        sidebarOpen={sidebarOpen}
-        setSidebarOpen={setSidebarOpen}
-      />
-
-      {/* ── Mobile Sidebar ── */}
-      <Sidebar
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
-
-      {/* ── Page Content ── */}
       <main className="pt-20 px-4 md:px-8 pb-10 max-w-7xl mx-auto">
         <Routes>
-          <Route path="/"                index element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard"       element={<Dashboard />} />
-          <Route path="/subscription"    element={<Subscription />} />
-          <Route path="/inventory"       element={<PlaceholderPage name="Inventory" />} />
-          <Route path="/orders"          element={<PlaceholderPage name="Orders" />} />
-          <Route path="/customers"       element={<PlaceholderPage name="Customers" />} />
-          <Route path="/stocks"          element={<PlaceholderPage name="Stocks" />} />
-          <Route path="/notifications"   element={<PlaceholderPage name="Notifications" />} />
-          <Route path="/reports"         element={<PlaceholderPage name="Reports" />} />
-          <Route path="/settings"        element={<PlaceholderPage name="Settings" />} />
-          {/* Fallback */}
-          <Route path="*"                element={<Navigate to="/dashboard" replace />} />
+          <Route path="/"              index element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard"     element={<Dashboard />} />
+          <Route path="/subscription"  element={<Subscription />} />
+          <Route path="/inventory"     element={<Inventory />} />
+          <Route path="/orders"        element={<Orders />} />
+          <Route path="/customers"     element={<Customers />} />
+          <Route path="/stocks"        element={<Stocks />} />
+          <Route path="/reports"       element={<Reports />} />          {/* ← UPDATED */}
+          <Route path="/notifications" element={<PlaceholderPage name="Notifications" />} />
+          <Route path="/settings"      element={<PlaceholderPage name="Settings" />} />
+          <Route path="*"              element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
-
     </div>
   );
 }
