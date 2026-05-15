@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider, useTheme } from "./components/ThemeContext";
+import { NotificationProvider } from "./components/NotificationContext";
 import { Navbar, Sidebar, NAV_ITEMS } from "./components/Navbar";
 import Dashboard from "./pages/Dashboard";
 import Subscription from "./pages/Subscription";
@@ -8,7 +9,9 @@ import Inventory from "./pages/Inventory";
 import Orders from "./pages/Orders";
 import Customers from "./pages/Customers";
 import Stocks from "./pages/Stocks";
-import Reports from "./pages/Reports";       // ← NEW
+import Reports from "./pages/Reports";
+import Settings from "./pages/Settings";
+import Notifications from "./pages/Notifications";
 
 // ─── PLACEHOLDER (baaki pages ke liye) ───────────────────────────────────────
 function PlaceholderPage({ name }) {
@@ -62,9 +65,9 @@ function AppInner() {
           <Route path="/orders"        element={<Orders />} />
           <Route path="/customers"     element={<Customers />} />
           <Route path="/stocks"        element={<Stocks />} />
-          <Route path="/reports"       element={<Reports />} />          {/* ← UPDATED */}
-          <Route path="/notifications" element={<PlaceholderPage name="Notifications" />} />
-          <Route path="/settings"      element={<PlaceholderPage name="Settings" />} />
+          <Route path="/reports"       element={<Reports />} />
+          <Route path="/notifications" element={<Notifications />} />
+          <Route path="/settings"      element={<Settings />} />
           <Route path="*"              element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
@@ -77,7 +80,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <ThemeProvider>
-        <AppInner />
+        <NotificationProvider>
+          <AppInner />
+        </NotificationProvider>
       </ThemeProvider>
     </BrowserRouter>
   );
