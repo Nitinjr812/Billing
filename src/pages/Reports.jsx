@@ -90,12 +90,12 @@ function StatCard({ label, value, trend, trendDir, sub }) {
   const bgs    = { up: t.greenBg, down: t.redBg, neu: t.orangeBg };
   return (
     <div style={{
-      borderRadius: "16px", padding: "20px", display: "flex", flexDirection: "column", gap: "10px",
+      borderRadius: "16px", padding: "16px", display: "flex", flexDirection: "column", gap: "8px",
       background: t.bgCard, border: `1px solid ${t.border}`,
       transition: "background 0.25s ease, border-color 0.25s ease",
     }}>
-      <p style={{ fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>{label}</p>
-      <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "26px", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", lineHeight: 1 }}>{value}</p>
+      <p style={{ fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: t.textMuted, fontFamily: "'DM Sans', sans-serif", margin: 0 }}>{label}</p>
+      <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(20px, 4vw, 26px)", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", lineHeight: 1, margin: 0 }}>{value}</p>
       <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
         {trend && <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "99px", color: colors[trendDir], background: bgs[trendDir] }}>{trend}</span>}
         {sub && <span style={{ fontSize: "11px", color: t.textMuted }}>{sub}</span>}
@@ -108,13 +108,13 @@ function ChartCard({ title, sub, children, style = {} }) {
   const { t } = useTheme();
   return (
     <div style={{
-      borderRadius: "16px", padding: "20px", display: "flex", flexDirection: "column",
+      borderRadius: "16px", padding: "16px", display: "flex", flexDirection: "column",
       background: t.bgCard, border: `1px solid ${t.border}`,
       transition: "background 0.25s ease, border-color 0.25s ease", ...style,
     }}>
-      <div style={{ marginBottom: "16px" }}>
-        <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "14px", color: t.textPrimary }}>{title}</h3>
-        {sub && <p style={{ fontSize: "11px", color: t.textMuted, marginTop: "2px" }}>{sub}</p>}
+      <div style={{ marginBottom: "14px" }}>
+        <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "14px", color: t.textPrimary, margin: 0 }}>{title}</h3>
+        {sub && <p style={{ fontSize: "11px", color: t.textMuted, marginTop: "2px", marginBottom: 0 }}>{sub}</p>}
       </div>
       {children}
     </div>
@@ -132,7 +132,7 @@ function RevenueLineChart() {
       borderColor: t.accent,
       borderWidth: 2.5,
       backgroundColor: `${t.accent}18`,
-      pointRadius: 5,
+      pointRadius: 4,
       pointBackgroundColor: t.accent,
       pointBorderColor: t.bgCard,
       pointBorderWidth: 2,
@@ -148,11 +148,11 @@ function RevenueLineChart() {
         callbacks: { label: (ctx) => " ₹" + ctx.raw.toLocaleString("en-IN") } },
     },
     scales: {
-      x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 11 } } },
-      y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 11 }, callback: (v) => "₹" + v / 1000 + "k" } },
+      x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 10 } } },
+      y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 10 }, callback: (v) => "₹" + v / 1000 + "k" } },
     },
   };
-  return <div style={{ height: 200 }}><Line data={data} options={options} /></div>;
+  return <div style={{ height: 180 }}><Line data={data} options={options} /></div>;
 }
 
 function OrdersBarChart() {
@@ -176,11 +176,11 @@ function OrdersBarChart() {
       tooltip: { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody },
     },
     scales: {
-      x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 11 } } },
-      y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 11 } } },
+      x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 10 } } },
+      y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 10 } } },
     },
   };
-  return <div style={{ height: 200 }}><Bar data={data} options={options} /></div>;
+  return <div style={{ height: 180 }}><Bar data={data} options={options} /></div>;
 }
 
 function CategoryDonut() {
@@ -198,12 +198,12 @@ function CategoryDonut() {
   const options = {
     responsive: true, maintainAspectRatio: false, cutout: "68%",
     plugins: {
-      legend: { position: "bottom", labels: { color: t.textMuted, font: { size: 12 }, padding: 14, boxWidth: 10 } },
+      legend: { position: "bottom", labels: { color: t.textMuted, font: { size: 11 }, padding: 12, boxWidth: 10 } },
       tooltip: { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody,
         callbacks: { label: (ctx) => " ₹" + ctx.raw.toLocaleString("en-IN") } },
     },
   };
-  return <div style={{ height: 220 }}><Doughnut data={data} options={options} /></div>;
+  return <div style={{ height: 200 }}><Doughnut data={data} options={options} /></div>;
 }
 
 function CustomerGrowthChart() {
@@ -231,27 +231,28 @@ function CustomerGrowthChart() {
       tooltip: { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody },
     },
     scales: {
-      x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 11 } } },
-      y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 11 } } },
+      x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 10 } } },
+      y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 10 } } },
     },
   };
-  return <div style={{ height: 180 }}><Line data={data} options={options} /></div>;
+  return <div style={{ height: 160 }}><Line data={data} options={options} /></div>;
 }
 
 // ─── AI CHAT PANEL ────────────────────────────────────────────────────────────
 const QUICK_PROMPTS = [
-  "Revenue trend analysis",
-  "Which product should I restock?",
-  "Top customer insights",
-  "This month's summary",
+  "Revenue trend",
+  "Restock urgently?",
+  "Customer insights",
+  "Month summary",
 ];
 
 function AiChat({ t }) {
   const [messages, setMessages] = useState([
-    { role: "assistant", text: "👋 Hi! I'm your AI Business Analyst. I have full access to your May 2024 dashboard data — revenue, orders, customers, inventory, and more.\n\nHere's what you can ask me:\n\n📈 Performance\n• \"How is revenue trending?\"\n• \"What's our best performing category?\"\n• \"Compare this month vs last month\"\n\n📦 Inventory & Products\n• \"Which products need restocking urgently?\"\n• \"What's our fastest growing product?\"\n• \"Which SKUs are out of stock?\"\n\n👥 Customers\n• \"How many premium customers do we have?\"\n• \"What's our new customer acquisition this month?\"\n\n⚠️ Risks & Opportunities\n• \"What are the biggest risks right now?\"\n• \"Where should I focus to grow revenue?\"\n• \"Which orders are still pending?\"\n\nJust type your question below!" }
+    { role: "assistant", text: "👋 Hi! I'm your AI Business Analyst. I have full access to your May 2024 dashboard data.\n\nYou can ask me about:\n📈 Revenue & orders trends\n📦 Inventory & product performance\n👥 Customer insights\n⚠️ Risks & opportunities\n\nJust type below!" }
   ]);
-  const [input, setInput]   = useState("");
+  const [input, setInput]     = useState("");
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false); // mobile: collapsed by default
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -262,6 +263,7 @@ function AiChat({ t }) {
     const userText = text || input.trim();
     if (!userText || loading) return;
     setInput("");
+    if (!expanded) setExpanded(true); // auto-expand on mobile when sending
 
     const newMessages = [...messages, { role: "user", text: userText }];
     setMessages(newMessages);
@@ -285,7 +287,7 @@ function AiChat({ t }) {
       });
 
       const data = await res.json();
-      const reply = data?.content?.[0]?.text || "Sorry, kuch problem ho gayi. Dobara try karo.";
+      const reply = data?.content?.[0]?.text || "Sorry, something went wrong. Please try again.";
       setMessages((prev) => [...prev, { role: "assistant", text: reply }]);
     } catch {
       setMessages((prev) => [...prev, { role: "assistant", text: "Network error occurred. Please try again." }]);
@@ -301,116 +303,135 @@ function AiChat({ t }) {
   return (
     <div style={{
       borderRadius: "16px", background: t.bgCard, border: `1px solid ${t.border}`,
-      display: "flex", flexDirection: "column", height: "100%", minHeight: 520,
+      display: "flex", flexDirection: "column",
       transition: "background 0.25s ease, border-color 0.25s ease", overflow: "hidden",
     }}>
-      {/* Header */}
-      <div style={{
-        padding: "16px 20px", borderBottom: `1px solid ${t.border}`,
-        display: "flex", alignItems: "center", gap: "10px", flexShrink: 0,
-      }}>
+      {/* Header — tappable on mobile to expand/collapse */}
+      <div
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          padding: "14px 16px", borderBottom: expanded ? `1px solid ${t.border}` : "none",
+          display: "flex", alignItems: "center", gap: "10px", flexShrink: 0,
+          cursor: "pointer", userSelect: "none",
+        }}
+      >
         <div style={{
-          width: 32, height: 32, borderRadius: "10px",
+          width: 30, height: 30, borderRadius: "9px",
           background: `${t.accent}22`, border: `1px solid ${t.accent}44`,
-          display: "flex", alignItems: "center", justifyContent: "center", fontSize: "15px",
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px",
+          flexShrink: 0,
         }}>✦</div>
-        <div>
-          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.textPrimary, lineHeight: 1.2 }}>AI Analyst</p>
-          <p style={{ fontSize: "10px", color: t.green, fontWeight: 600 }}>● Online</p>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.textPrimary, lineHeight: 1.2, margin: 0 }}>AI Analyst</p>
+          <p style={{ fontSize: "10px", color: t.green, fontWeight: 600, margin: 0 }}>● Online</p>
         </div>
+        {/* Chevron indicator */}
+        <span style={{
+          fontSize: 12, color: t.textMuted,
+          transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+          transition: "transform 0.2s",
+          display: "inline-block",
+        }}>▼</span>
       </div>
 
-      {/* Messages */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
-        {messages.map((msg, i) => (
-          <div key={i} style={{
-            display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
+      {/* Collapsible body */}
+      {expanded && (
+        <>
+          {/* Messages */}
+          <div style={{
+            flex: 1, overflowY: "auto", padding: "14px",
+            display: "flex", flexDirection: "column", gap: "10px",
+            maxHeight: 360,
           }}>
-            <div style={{
-              maxWidth: "85%",
-              padding: "10px 14px",
-              borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-              background: msg.role === "user" ? t.accent : `${t.accent}12`,
-              color: msg.role === "user" ? "#fff" : t.textPrimary,
-              fontSize: "12px",
-              lineHeight: 1.6,
-              fontFamily: "'DM Sans', sans-serif",
-              border: msg.role === "assistant" ? `1px solid ${t.border}` : "none",
-              whiteSpace: "pre-wrap",
-            }}>{msg.text}</div>
+            {messages.map((msg, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
+                <div style={{
+                  maxWidth: "88%",
+                  padding: "9px 13px",
+                  borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                  background: msg.role === "user" ? t.accent : `${t.accent}12`,
+                  color: msg.role === "user" ? "#fff" : t.textPrimary,
+                  fontSize: "12px",
+                  lineHeight: 1.6,
+                  fontFamily: "'DM Sans', sans-serif",
+                  border: msg.role === "assistant" ? `1px solid ${t.border}` : "none",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}>{msg.text}</div>
+              </div>
+            ))}
+            {loading && (
+              <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <div style={{
+                  padding: "10px 16px", borderRadius: "14px 14px 14px 4px",
+                  background: `${t.accent}12`, border: `1px solid ${t.border}`,
+                  display: "flex", gap: "4px", alignItems: "center",
+                }}>
+                  {[0,1,2].map((d) => (
+                    <div key={d} style={{
+                      width: 6, height: 6, borderRadius: "50%", background: t.accent,
+                      animation: "bounce 1.2s infinite",
+                      animationDelay: `${d * 0.2}s`,
+                    }} />
+                  ))}
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
           </div>
-        ))}
 
-        {loading && (
-          <div style={{ display: "flex", justifyContent: "flex-start" }}>
-            <div style={{
-              padding: "10px 16px", borderRadius: "14px 14px 14px 4px",
-              background: `${t.accent}12`, border: `1px solid ${t.border}`,
-              display: "flex", gap: "4px", alignItems: "center",
-            }}>
-              {[0,1,2].map((d) => (
-                <div key={d} style={{
-                  width: 6, height: 6, borderRadius: "50%", background: t.accent,
-                  animation: "bounce 1.2s infinite",
-                  animationDelay: `${d * 0.2}s`,
-                }} />
-              ))}
-            </div>
+          {/* Quick prompts */}
+          <div style={{ padding: "0 10px 8px", display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: 0 }}>
+            {QUICK_PROMPTS.map((q) => (
+              <button
+                key={q}
+                onClick={() => sendMessage(q)}
+                disabled={loading}
+                style={{
+                  fontSize: "10px", fontWeight: 600, padding: "4px 10px", borderRadius: "99px",
+                  background: `${t.accent}15`, border: `1px solid ${t.accent}30`,
+                  color: t.accent, cursor: loading ? "not-allowed" : "pointer",
+                  fontFamily: "'DM Sans', sans-serif", opacity: loading ? 0.5 : 1,
+                  transition: "all 0.15s", whiteSpace: "nowrap",
+                }}
+              >{q}</button>
+            ))}
           </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
 
-      {/* Quick prompts */}
-      <div style={{ padding: "0 12px 8px", display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: 0 }}>
-        {QUICK_PROMPTS.map((q) => (
-          <button
-            key={q}
-            onClick={() => sendMessage(q)}
-            disabled={loading}
-            style={{
-              fontSize: "10px", fontWeight: 600, padding: "4px 10px", borderRadius: "99px",
-              background: `${t.accent}15`, border: `1px solid ${t.accent}30`,
-              color: t.accent, cursor: loading ? "not-allowed" : "pointer",
-              fontFamily: "'DM Sans', sans-serif", opacity: loading ? 0.5 : 1,
-              transition: "all 0.15s",
-            }}
-          >{q}</button>
-        ))}
-      </div>
-
-      {/* Input */}
-      <div style={{
-        padding: "12px", borderTop: `1px solid ${t.border}`,
-        display: "flex", gap: "8px", flexShrink: 0,
-      }}>
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKey}
-          placeholder="Ask anything about your business…"
-          rows={1}
-          disabled={loading}
-          style={{
-            flex: 1, resize: "none", background: `${t.accent}08`,
-            border: `1px solid ${t.border}`, borderRadius: "10px",
-            padding: "8px 12px", fontSize: "12px", color: t.textPrimary,
-            fontFamily: "'DM Sans', sans-serif", outline: "none",
-            transition: "border-color 0.2s", lineHeight: 1.5,
-          }}
-        />
-        <button
-          onClick={() => sendMessage()}
-          disabled={loading || !input.trim()}
-          style={{
-            width: 36, height: 36, borderRadius: "10px", flexShrink: 0,
-            background: loading || !input.trim() ? `${t.accent}30` : t.accent,
-            border: "none", cursor: loading || !input.trim() ? "not-allowed" : "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: "16px", color: "#fff", transition: "background 0.2s",
-          }}
-        >↑</button>
-      </div>
+          {/* Input */}
+          <div style={{
+            padding: "10px 12px", borderTop: `1px solid ${t.border}`,
+            display: "flex", gap: "8px", flexShrink: 0,
+          }}>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKey}
+              placeholder="Ask anything about your business…"
+              rows={1}
+              disabled={loading}
+              style={{
+                flex: 1, resize: "none", background: `${t.accent}08`,
+                border: `1px solid ${t.border}`, borderRadius: "10px",
+                padding: "8px 12px", fontSize: "12px", color: t.textPrimary,
+                fontFamily: "'DM Sans', sans-serif", outline: "none",
+                transition: "border-color 0.2s", lineHeight: 1.5,
+              }}
+            />
+            <button
+              onClick={() => sendMessage()}
+              disabled={loading || !input.trim()}
+              style={{
+                width: 36, height: 36, borderRadius: "10px", flexShrink: 0,
+                background: loading || !input.trim() ? `${t.accent}30` : t.accent,
+                border: "none", cursor: loading || !input.trim() ? "not-allowed" : "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "16px", color: "#fff", transition: "background 0.2s",
+              }}
+            >↑</button>
+          </div>
+        </>
+      )}
 
       <style>{`
         @keyframes bounce {
@@ -429,25 +450,57 @@ export default function Reports() {
   return (
     <>
       <style>{`
-        .rpt-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 12px; }
-        .rpt-main-layout { display: grid; grid-template-columns: 1fr 320px; gap: 16px; align-items: start; }
+        .rpt-stat-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 12px;
+        }
+        .rpt-main-layout {
+          display: grid;
+          grid-template-columns: 1fr 300px;
+          gap: 16px;
+          align-items: start;
+        }
         .rpt-charts-col { display: flex; flex-direction: column; gap: 16px; }
-        .rpt-row-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: 16px; }
+        .rpt-row-2 {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 16px;
+        }
+        .rpt-ai-sticky { position: sticky; top: 88px; }
+
+        /* Tablet */
         @media (max-width: 900px) {
           .rpt-main-layout { grid-template-columns: 1fr; }
+          .rpt-ai-sticky { position: static; }
         }
+
+        /* Mobile */
         @media (max-width: 640px) {
-          .rpt-stat-grid { grid-template-columns: repeat(2,1fr); }
-          .rpt-row-2 { grid-template-columns: 1fr; }
+          .rpt-stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+          .rpt-row-2 { grid-template-columns: 1fr; gap: 12px; }
+          .rpt-main-layout { gap: 12px; }
+        }
+
+        /* Tiny mobile */
+        @media (max-width: 360px) {
+          .rpt-stat-grid { grid-template-columns: 1fr 1fr; }
         }
       `}</style>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
 
         {/* Header */}
         <div>
-          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "28px", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", transition: "color 0.25s ease" }}>Reports</h1>
-          <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>Business performance overview — ask the AI analyst for deeper insights</p>
+          <h1 style={{
+            fontFamily: "'Syne', sans-serif",
+            fontSize: "clamp(22px, 5vw, 28px)",
+            fontWeight: 900, color: t.textPrimary,
+            letterSpacing: "-0.03em", transition: "color 0.25s ease", margin: 0,
+          }}>Reports</h1>
+          <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
+            Business performance overview — ask the AI analyst for deeper insights
+          </p>
         </div>
 
         {/* KPI Row */}
@@ -485,40 +538,41 @@ export default function Reports() {
                 <CustomerGrowthChart />
               </ChartCard>
 
-              {/* Top Products Table */}
+              {/* Top Products Table — horizontally scrollable on mobile */}
               <ChartCard title="Top Products" sub="By revenue this month">
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
-                  <thead>
-                    <tr style={{ borderBottom: `1px solid ${t.border}` }}>
-                      {["Product", "Revenue", "Orders", "Growth"].map((h) => (
-                        <th key={h} style={{
-                          textAlign: "left", paddingBottom: "8px", fontSize: "10px", fontWeight: 600,
-                          textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted,
-                          fontFamily: "'DM Sans', sans-serif", paddingRight: "12px",
-                        }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {TOP_PRODUCTS.map((p, i) => (
-                      <tr key={p.name} style={{ borderBottom: i < TOP_PRODUCTS.length - 1 ? `1px solid ${t.borderLight ?? t.border}` : "none" }}>
-                        <td style={{ padding: "8px 12px 8px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>{p.name}</td>
-                        <td style={{ padding: "8px 12px 8px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>{p.revenue}</td>
-                        <td style={{ padding: "8px 12px 8px 0", fontSize: "11px", color: t.textMuted }}>{p.orders}</td>
-                        <td style={{ padding: "8px 0" }}>
-                          <span style={{ fontSize: "10px", fontWeight: 600, padding: "3px 8px", borderRadius: "99px", color: t.green, background: t.greenBg }}>{p.growth}</span>
-                        </td>
+                <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                  <table style={{ width: "100%", minWidth: 280, borderCollapse: "collapse", fontSize: "12px" }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${t.border}` }}>
+                        {["Product", "Revenue", "Orders", "Growth"].map((h) => (
+                          <th key={h} style={{
+                            textAlign: "left", paddingBottom: "8px", fontSize: "10px", fontWeight: 600,
+                            textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted,
+                            fontFamily: "'DM Sans', sans-serif", paddingRight: "10px", whiteSpace: "nowrap",
+                          }}>{h}</th>
+                        ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {TOP_PRODUCTS.map((p, i) => (
+                        <tr key={p.name} style={{ borderBottom: i < TOP_PRODUCTS.length - 1 ? `1px solid ${t.borderLight ?? t.border}` : "none" }}>
+                          <td style={{ padding: "7px 10px 7px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>{p.name}</td>
+                          <td style={{ padding: "7px 10px 7px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>{p.revenue}</td>
+                          <td style={{ padding: "7px 10px 7px 0", fontSize: "11px", color: t.textMuted }}>{p.orders}</td>
+                          <td style={{ padding: "7px 0" }}>
+                            <span style={{ fontSize: "10px", fontWeight: 600, padding: "3px 8px", borderRadius: "99px", color: t.green, background: t.greenBg, whiteSpace: "nowrap" }}>{p.growth}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </ChartCard>
             </div>
 
           </div>
-
-          {/* AI Chat Sidebar */}
-          <div style={{ position: "sticky", top: "88px" }}>
+ 
+          <div className="rpt-ai-sticky">
             <AiChat t={t} />
           </div>
 
