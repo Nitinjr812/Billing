@@ -175,6 +175,7 @@ function StatusBadge({ status, t }) {
         color: s.color,
         background: s.bg,
         whiteSpace: "nowrap",
+        display: "inline-block",
       }}
     >
       {status}
@@ -199,6 +200,7 @@ function CategoryBadge({ category, t }) {
         color: s.color,
         background: s.bg,
         whiteSpace: "nowrap",
+        display: "inline-block",
       }}
     >
       {category}
@@ -218,36 +220,47 @@ function SupplierDrawer({ supplier, onClose, t }) {
         style={{
           position: "fixed",
           inset: 0,
-          background: "rgba(0,0,0,0.35)",
+          background: "rgba(0,0,0,0.45)",
           zIndex: 50,
           backdropFilter: "blur(2px)",
+          WebkitBackdropFilter: "blur(2px)",
         }}
       />
-      {/* Drawer */}
+      {/* Drawer — full-screen on mobile, side panel on desktop */}
       <div
         style={{
           position: "fixed",
           top: 0,
           right: 0,
           bottom: 0,
-          width: "min(420px, 95vw)",
+          width: "min(440px, 100vw)",
           background: t.bgCard,
           borderLeft: `1px solid ${t.border}`,
           zIndex: 51,
           overflowY: "auto",
-          padding: "28px 24px",
+          overflowX: "hidden",
+          padding: "24px 20px",
           display: "flex",
           flexDirection: "column",
           gap: "20px",
+          boxSizing: "border-box",
         }}
       >
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-          <div>
-            <p style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: t.textMuted, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{
+              fontSize: "10px", fontWeight: 700, textTransform: "uppercase",
+              letterSpacing: "0.1em", color: t.textMuted, margin: 0,
+              fontFamily: "'DM Sans', sans-serif",
+            }}>
               {supplier.id}
             </p>
-            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: "22px", fontWeight: 900, color: t.textPrimary, margin: "4px 0 0", letterSpacing: "-0.02em" }}>
+            <h2 style={{
+              fontFamily: "'Syne', sans-serif", fontSize: "clamp(18px, 5vw, 22px)",
+              fontWeight: 900, color: t.textPrimary, margin: "4px 0 0",
+              letterSpacing: "-0.02em", wordBreak: "break-word",
+            }}>
               {supplier.name}
             </h2>
             <div style={{ display: "flex", gap: "8px", marginTop: "8px", flexWrap: "wrap" }}>
@@ -258,7 +271,7 @@ function SupplierDrawer({ supplier, onClose, t }) {
           <button
             onClick={onClose}
             style={{
-              width: 32, height: 32, borderRadius: "10px",
+              width: 36, height: 36, minWidth: 36, borderRadius: "10px",
               background: `${t.accent}12`, border: `1px solid ${t.border}`,
               color: t.textMuted, cursor: "pointer", fontSize: "16px",
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -270,7 +283,7 @@ function SupplierDrawer({ supplier, onClose, t }) {
         </div>
 
         {/* Stats row */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
           {[
             ["Total Orders", supplier.totalOrders],
             ["Total Value", supplier.totalValue],
@@ -279,23 +292,39 @@ function SupplierDrawer({ supplier, onClose, t }) {
           ].map(([label, val]) => (
             <div key={label} style={{
               background: `${t.accent}08`, border: `1px solid ${t.border}`,
-              borderRadius: "12px", padding: "14px 16px",
+              borderRadius: "12px", padding: "12px 14px",
             }}>
-              <p style={{ fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>{label}</p>
-              <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "18px", fontWeight: 900, color: t.textPrimary, margin: "4px 0 0" }}>{val}</p>
+              <p style={{
+                fontSize: "9px", fontWeight: 600, textTransform: "uppercase",
+                letterSpacing: "0.08em", color: t.textMuted, margin: 0,
+                fontFamily: "'DM Sans', sans-serif",
+              }}>{label}</p>
+              <p style={{
+                fontFamily: "'Syne', sans-serif", fontSize: "clamp(14px, 4vw, 18px)",
+                fontWeight: 900, color: t.textPrimary, margin: "4px 0 0",
+                wordBreak: "break-word",
+              }}>{val}</p>
             </div>
           ))}
         </div>
 
         {/* Rating */}
         <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: "16px" }}>
-          <p style={{ fontSize: "11px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px", fontFamily: "'DM Sans', sans-serif" }}>Supplier Rating</p>
+          <p style={{
+            fontSize: "11px", fontWeight: 600, color: t.textMuted,
+            textTransform: "uppercase", letterSpacing: "0.08em",
+            margin: "0 0 8px", fontFamily: "'DM Sans', sans-serif",
+          }}>Supplier Rating</p>
           <StarRating rating={supplier.rating} t={t} />
         </div>
 
         {/* Contact Info */}
         <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-          <p style={{ fontSize: "11px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", margin: 0, fontFamily: "'DM Sans', sans-serif" }}>Contact Details</p>
+          <p style={{
+            fontSize: "11px", fontWeight: 600, color: t.textMuted,
+            textTransform: "uppercase", letterSpacing: "0.08em",
+            margin: 0, fontFamily: "'DM Sans', sans-serif",
+          }}>Contact Details</p>
           {[
             ["👤 Contact", supplier.contact],
             ["✉️ Email", supplier.email],
@@ -303,9 +332,16 @@ function SupplierDrawer({ supplier, onClose, t }) {
             ["📍 Location", supplier.location],
             ["🗓 Last Order", supplier.lastOrder],
           ].map(([label, val]) => (
-            <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
-              <span style={{ fontSize: "12px", color: t.textMuted, fontFamily: "'DM Sans', sans-serif", flexShrink: 0 }}>{label}</span>
-              <span style={{ fontSize: "12px", color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", fontWeight: 500, textAlign: "right" }}>{val}</span>
+            <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
+              <span style={{
+                fontSize: "12px", color: t.textMuted,
+                fontFamily: "'DM Sans', sans-serif", flexShrink: 0,
+              }}>{label}</span>
+              <span style={{
+                fontSize: "12px", color: t.textPrimary,
+                fontFamily: "'DM Sans', sans-serif", fontWeight: 500,
+                textAlign: "right", wordBreak: "break-word", minWidth: 0,
+              }}>{val}</span>
             </div>
           ))}
         </div>
@@ -313,18 +349,18 @@ function SupplierDrawer({ supplier, onClose, t }) {
         {/* Action buttons */}
         <div style={{ display: "flex", gap: "10px", marginTop: "auto", paddingTop: "8px" }}>
           <button style={{
-            flex: 1, padding: "10px", borderRadius: "10px",
+            flex: 1, padding: "12px 10px", borderRadius: "10px",
             background: t.accent, color: "#fff", border: "none",
-            fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "12px",
-            cursor: "pointer",
+            fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
+            cursor: "pointer", touchAction: "manipulation",
           }}>
             Create Order
           </button>
           <button style={{
-            flex: 1, padding: "10px", borderRadius: "10px",
+            flex: 1, padding: "12px 10px", borderRadius: "10px",
             background: `${t.accent}12`, color: t.textPrimary, border: `1px solid ${t.border}`,
-            fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "12px",
-            cursor: "pointer",
+            fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "13px",
+            cursor: "pointer", touchAction: "manipulation",
           }}>
             Edit Supplier
           </button>
@@ -334,13 +370,78 @@ function SupplierDrawer({ supplier, onClose, t }) {
   );
 }
 
-// ─── SUPPLIER TABLE ROW ───────────────────────────────────────────────────────
+// ─── MOBILE CARD VIEW ─────────────────────────────────────────────────────────
+function SupplierCard({ supplier, onClick, t }) {
+  return (
+    <div
+      onClick={() => onClick(supplier)}
+      style={{
+        padding: "16px",
+        borderRadius: "14px",
+        border: `1px solid ${t.border}`,
+        background: t.bgCard,
+        cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        gap: "12px",
+        touchAction: "manipulation",
+        WebkitTapHighlightColor: "transparent",
+        transition: "background 0.15s",
+        active: { background: `${t.accent}08` },
+      }}
+    >
+      {/* Top row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+        <div style={{ minWidth: 0 }}>
+          <p style={{
+            fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "14px",
+            color: t.textPrimary, margin: 0, whiteSpace: "nowrap",
+            overflow: "hidden", textOverflow: "ellipsis",
+          }}>
+            {supplier.name}
+          </p>
+          <p style={{ fontSize: "10px", color: t.textMuted, margin: "2px 0 0", fontFamily: "monospace" }}>
+            {supplier.id}
+          </p>
+        </div>
+        <StatusBadge status={supplier.status} t={t} />
+      </div>
+
+      {/* Badges */}
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+        <CategoryBadge category={supplier.category} t={t} />
+        <span style={{ fontSize: "11px", color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+          📍 {supplier.location}
+        </span>
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <p style={{
+            fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "15px",
+            color: t.textPrimary, margin: 0,
+          }}>
+            {supplier.totalValue}
+          </p>
+          <p style={{ fontSize: "10px", color: t.textMuted, margin: "2px 0 0" }}>
+            {supplier.totalOrders} orders
+          </p>
+        </div>
+        <StarRating rating={supplier.rating} t={t} />
+        <span style={{ fontSize: "18px", color: t.textMuted }}>›</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── DESKTOP TABLE ROW ────────────────────────────────────────────────────────
 function SupplierRow({ supplier, onClick, t, isLast }) {
   return (
     <tr
       onClick={() => onClick(supplier)}
       style={{
-        borderBottom: !isLast ? `1px solid ${t.borderLight}` : "none",
+        borderBottom: !isLast ? `1px solid ${t.borderLight || t.border}` : "none",
         cursor: "pointer",
         transition: "background 0.15s",
       }}
@@ -349,7 +450,10 @@ function SupplierRow({ supplier, onClick, t, isLast }) {
     >
       <td style={{ padding: "14px 0" }}>
         <div>
-          <p style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "13px", color: t.textPrimary, margin: 0 }}>
+          <p style={{
+            fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "13px",
+            color: t.textPrimary, margin: 0,
+          }}>
             {supplier.name}
           </p>
           <p style={{ fontSize: "10px", color: t.textMuted, margin: "2px 0 0", fontFamily: "monospace" }}>
@@ -362,7 +466,10 @@ function SupplierRow({ supplier, onClick, t, isLast }) {
       </td>
       <td style={{ padding: "14px 8px" }}>
         <div>
-          <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: t.textPrimary, margin: 0, fontWeight: 500 }}>
+          <p style={{
+            fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
+            color: t.textPrimary, margin: 0, fontWeight: 500,
+          }}>
             {supplier.contact}
           </p>
           <p style={{ fontSize: "11px", color: t.textMuted, margin: "1px 0 0" }}>
@@ -371,7 +478,10 @@ function SupplierRow({ supplier, onClick, t, isLast }) {
         </div>
       </td>
       <td style={{ padding: "14px 8px" }}>
-        <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.textPrimary, margin: 0 }}>
+        <p style={{
+          fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px",
+          color: t.textPrimary, margin: 0,
+        }}>
           {supplier.totalValue}
         </p>
         <p style={{ fontSize: "10px", color: t.textMuted, margin: "1px 0 0" }}>
@@ -397,20 +507,32 @@ function SummaryKpi({ label, value, sub, trendDir, t }) {
   const bgs = { up: t.greenBg, down: t.redBg, neu: t.orangeBg };
   return (
     <div style={{
-      borderRadius: "16px", padding: "20px",
+      borderRadius: "16px", padding: "18px 16px",
       background: t.bgCard, border: `1px solid ${t.border}`,
       transition: "background 0.25s ease, border-color 0.25s ease",
+      minWidth: 0,
     }}>
-      <p style={{ fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: t.textMuted, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>
+      <p style={{
+        fontSize: "9px", fontWeight: 600, textTransform: "uppercase",
+        letterSpacing: "0.1em", color: t.textMuted, margin: 0,
+        fontFamily: "'DM Sans', sans-serif",
+      }}>
         {label}
       </p>
-      <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "26px", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", margin: "8px 0 6px", lineHeight: 1 }}>
+      <p style={{
+        fontFamily: "'Syne', sans-serif",
+        fontSize: "clamp(20px, 5vw, 26px)",
+        fontWeight: 900, color: t.textPrimary,
+        letterSpacing: "-0.03em", margin: "6px 0 6px", lineHeight: 1,
+        wordBreak: "break-word",
+      }}>
         {value}
       </p>
       {sub && (
         <span style={{
           fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "99px",
           color: colors[trendDir], background: bgs[trendDir],
+          display: "inline-block",
         }}>
           {sub}
         </span>
@@ -419,19 +541,33 @@ function SummaryKpi({ label, value, sub, trendDir, t }) {
   );
 }
 
-// ─── RESPONSIVE STYLES ───────────────────────────────────────────────────────
+// ─── STYLES ───────────────────────────────────────────────────────────────────
 const styles = `
+  * { box-sizing: border-box; }
+
   .sup-kpi-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: 12px;
   }
-  .sup-table-wrap {
-    overflow-x: auto;
-  }
-  @media (max-width: 640px) {
+
+  /* Desktop table */
+  .sup-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .sup-cards { display: none; }
+
+  /* Tablet */
+  @media (max-width: 900px) {
     .sup-kpi-grid { grid-template-columns: repeat(2, 1fr); }
-    .sup-hide-mobile { display: none !important; }
+  }
+
+  /* Mobile */
+  @media (max-width: 640px) {
+    .sup-kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    /* Switch from table to cards on mobile */
+    .sup-table-wrap { display: none; }
+    .sup-cards { display: flex; flex-direction: column; gap: 10px; }
+    .sup-filter-row { flex-direction: column !important; align-items: stretch !important; }
+    .sup-filter-row .sup-filter-count { margin-left: 0 !important; text-align: right; }
   }
 `;
 
@@ -465,9 +601,18 @@ export default function Suppliers() {
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
+        <div style={{
+          display: "flex", alignItems: "flex-end", justifyContent: "space-between",
+          flexWrap: "wrap", gap: "12px",
+        }}>
           <div>
-            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "28px", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", margin: 0, transition: "color 0.25s ease" }}>
+            <h1 style={{
+              fontFamily: "'Syne', sans-serif",
+              fontSize: "clamp(22px, 6vw, 28px)",
+              fontWeight: 900, color: t.textPrimary,
+              letterSpacing: "-0.03em", margin: 0,
+              transition: "color 0.25s ease",
+            }}>
               Suppliers
             </h1>
             <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
@@ -475,10 +620,11 @@ export default function Suppliers() {
             </p>
           </div>
           <button style={{
-            padding: "10px 20px", borderRadius: "10px",
+            padding: "10px 18px", borderRadius: "10px",
             background: t.accent, color: "#fff", border: "none",
             fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
             cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
+            touchAction: "manipulation", whiteSpace: "nowrap",
           }}>
             + Add Supplier
           </button>
@@ -497,16 +643,22 @@ export default function Suppliers() {
           borderRadius: "16px",
           background: t.bgCard,
           border: `1px solid ${t.border}`,
-          padding: "16px",
+          padding: "14px",
           display: "flex",
           flexWrap: "wrap",
           gap: "10px",
           alignItems: "center",
           transition: "background 0.25s ease, border-color 0.25s ease",
-        }}>
+        }}
+          className="sup-filter-row"
+        >
           {/* Search */}
-          <div style={{ position: "relative", flex: "1 1 200px", minWidth: 0 }}>
-            <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", color: t.textMuted, pointerEvents: "none" }}>
+          <div style={{ position: "relative", flex: "1 1 180px", minWidth: 0 }}>
+            <span style={{
+              position: "absolute", left: "12px", top: "50%",
+              transform: "translateY(-50%)", fontSize: "13px",
+              color: t.textMuted, pointerEvents: "none",
+            }}>
               🔍
             </span>
             <input
@@ -516,9 +668,11 @@ export default function Suppliers() {
               style={{
                 width: "100%", padding: "9px 12px 9px 34px", borderRadius: "10px",
                 background: `${t.accent}08`, border: `1px solid ${t.border}`,
-                color: t.textPrimary, fontSize: "12px",
+                color: t.textPrimary, fontSize: "14px",
                 fontFamily: "'DM Sans', sans-serif", outline: "none",
                 boxSizing: "border-box",
+                /* Prevent zoom on iOS */
+                fontSize: "16px",
               }}
             />
           </div>
@@ -530,12 +684,13 @@ export default function Suppliers() {
                 key={c}
                 onClick={() => setCatFilter(c)}
                 style={{
-                  fontSize: "11px", fontWeight: 600, padding: "6px 14px", borderRadius: "99px",
+                  fontSize: "11px", fontWeight: 600, padding: "7px 12px", borderRadius: "99px",
                   background: catFilter === c ? t.accent : `${t.accent}12`,
                   color: catFilter === c ? "#fff" : t.accent,
                   border: catFilter === c ? "none" : `1px solid ${t.accent}28`,
                   cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
-                  transition: "all 0.15s",
+                  transition: "all 0.15s", touchAction: "manipulation",
+                  minHeight: "32px",
                 }}
               >
                 {c}
@@ -550,12 +705,13 @@ export default function Suppliers() {
                 key={s}
                 onClick={() => setStatusFilter(s)}
                 style={{
-                  fontSize: "11px", fontWeight: 600, padding: "6px 14px", borderRadius: "99px",
+                  fontSize: "11px", fontWeight: 600, padding: "7px 12px", borderRadius: "99px",
                   background: statusFilter === s ? `${t.border}` : "transparent",
                   color: statusFilter === s ? t.textPrimary : t.textMuted,
                   border: `1px solid ${t.border}`,
                   cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
-                  transition: "all 0.15s",
+                  transition: "all 0.15s", touchAction: "manipulation",
+                  minHeight: "32px",
                 }}
               >
                 {s}
@@ -564,63 +720,89 @@ export default function Suppliers() {
           </div>
 
           {/* Count */}
-          <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "auto", whiteSpace: "nowrap", fontFamily: "'DM Sans', sans-serif" }}>
+          <span
+            className="sup-filter-count"
+            style={{
+              fontSize: "11px", color: t.textMuted,
+              marginLeft: "auto", whiteSpace: "nowrap",
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
             {filtered.length} of {SUPPLIERS.length} suppliers
           </span>
         </div>
 
-        {/* Table */}
-        <div style={{
-          borderRadius: "16px",
-          background: t.bgCard,
-          border: `1px solid ${t.border}`,
-          padding: "20px",
-          transition: "background 0.25s ease, border-color 0.25s ease",
-        }}>
-          <div className="sup-table-wrap">
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${t.border}` }}>
-                  {["Supplier", "Category", "Contact", "Total Value", "Rating", "Status", ""].map((h, i) => (
-                    <th
-                      key={i}
-                      className={i === 2 || i === 3 ? "sup-hide-mobile" : ""}
-                      style={{
-                        textAlign: "left", paddingBottom: "12px",
-                        fontSize: "10px", fontWeight: 600,
-                        textTransform: "uppercase", letterSpacing: "0.08em",
-                        color: t.textMuted, fontFamily: "'DM Sans', sans-serif",
-                        paddingRight: i < 6 ? "8px" : "0",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
+        {/* ── Desktop Table ── */}
+        <div
+          className="sup-table-wrap"
+          style={{
+            borderRadius: "16px",
+            background: t.bgCard,
+            border: `1px solid ${t.border}`,
+            padding: "20px",
+            transition: "background 0.25s ease, border-color 0.25s ease",
+          }}
+        >
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "560px" }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${t.border}` }}>
+                {["Supplier", "Category", "Contact", "Total Value", "Rating", "Status", ""].map((h, i) => (
+                  <th
+                    key={i}
+                    style={{
+                      textAlign: "left", paddingBottom: "12px",
+                      fontSize: "10px", fontWeight: 600,
+                      textTransform: "uppercase", letterSpacing: "0.08em",
+                      color: t.textMuted, fontFamily: "'DM Sans', sans-serif",
+                      paddingRight: i < 6 ? "8px" : "0",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length > 0 ? (
+                filtered.map((s, i) => (
+                  <SupplierRow
+                    key={s.id}
+                    supplier={s}
+                    onClick={setSelected}
+                    t={t}
+                    isLast={i === filtered.length - 1}
+                  />
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={7} style={{ padding: "48px 0", textAlign: "center" }}>
+                    <p style={{ fontSize: "32px", margin: "0 0 8px" }}>🔍</p>
+                    <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "16px", color: t.textPrimary, margin: 0 }}>No suppliers found</p>
+                    <p style={{ fontSize: "12px", color: t.textMuted, margin: "4px 0 0" }}>Try adjusting your search or filters</p>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {filtered.length > 0 ? (
-                  filtered.map((s, i) => (
-                    <SupplierRow
-                      key={s.id}
-                      supplier={s}
-                      onClick={setSelected}
-                      t={t}
-                      isLast={i === filtered.length - 1}
-                    />
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={7} style={{ padding: "48px 0", textAlign: "center" }}>
-                      <p style={{ fontSize: "32px", margin: "0 0 8px" }}>🔍</p>
-                      <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "16px", color: t.textPrimary, margin: 0 }}>No suppliers found</p>
-                      <p style={{ fontSize: "12px", color: t.textMuted, margin: "4px 0 0" }}>Try adjusting your search or filters</p>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── Mobile Cards ── */}
+        <div className="sup-cards">
+          {filtered.length > 0 ? (
+            filtered.map((s) => (
+              <SupplierCard key={s.id} supplier={s} onClick={setSelected} t={t} />
+            ))
+          ) : (
+            <div style={{
+              padding: "48px 20px", textAlign: "center",
+              borderRadius: "16px", background: t.bgCard, border: `1px solid ${t.border}`,
+            }}>
+              <p style={{ fontSize: "32px", margin: "0 0 8px" }}>🔍</p>
+              <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "16px", color: t.textPrimary, margin: 0 }}>No suppliers found</p>
+              <p style={{ fontSize: "12px", color: t.textMuted, margin: "4px 0 0" }}>Try adjusting your search or filters</p>
+            </div>
+          )}
         </div>
 
       </div>
