@@ -12,6 +12,7 @@ import Stocks from "./pages/Stocks";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import Notifications from "./pages/Notifications";
+import Suppliers from "./pages/Supliers";
 
 // ─── PLACEHOLDER (baaki pages ke liye) ───────────────────────────────────────
 function PlaceholderPage({ name }) {
@@ -68,6 +69,7 @@ function AppInner() {
           <Route path="/reports"       element={<Reports />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings"      element={<Settings />} />
+          <Route path="/suppliers"     element={<Suppliers />} /> {/* ← ADD THIS */}
           <Route path="*"              element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>

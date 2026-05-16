@@ -9,6 +9,7 @@ export const NAV_ITEMS = [
   { label: "Inventory",     icon: "◫", path: "/inventory"     },
   { label: "Orders",        icon: "◳", path: "/orders"        },
   { label: "Customers",     icon: "◉", path: "/customers"     },
+  { label: "Suppliers",     icon: "🏭", path: "/suppliers"    },  
   { label: "Stocks",        icon: "◈", path: "/stocks"        },
   { label: "Notifications", icon: "◎", path: "/notifications" },
   { label: "Reports",       icon: "◪", path: "/reports"       },
@@ -87,7 +88,7 @@ export function Logo() {
 // ─── NAVBAR ───────────────────────────────────────────────────────────────────
 export function Navbar({ sidebarOpen, setSidebarOpen }) {
   const { t } = useTheme();
-  const { unreadCount } = useNotifications();         // ← unread count
+  const { unreadCount } = useNotifications();
   const navigate = useNavigate();
   const location = useLocation();
   const isDesktop = useIsDesktop();
@@ -156,8 +157,6 @@ export function Navbar({ sidebarOpen, setSidebarOpen }) {
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
             </svg>
-
-            {/* ── UNREAD DOT ── shows only when unreadCount > 0 */}
             {unreadCount > 0 && (
               <span style={{
                 position: "absolute", top: "5px", right: "5px",
@@ -240,7 +239,7 @@ export function Navbar({ sidebarOpen, setSidebarOpen }) {
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 export function Sidebar({ open, onClose }) {
   const { t } = useTheme();
-  const { unreadCount } = useNotifications();          // ← unread count
+  const { unreadCount } = useNotifications();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -307,7 +306,6 @@ export function Sidebar({ open, onClose }) {
               >
                 <span style={{ fontSize: "15px", position: "relative" }}>
                   {item.icon}
-                  {/* dot on bell icon in sidebar too */}
                   {isNotif && unreadCount > 0 && (
                     <span style={{
                       position: "absolute", top: -3, right: -4,
@@ -317,7 +315,6 @@ export function Sidebar({ open, onClose }) {
                   )}
                 </span>
                 <span style={{ flex: 1 }}>{item.label}</span>
-                {/* Badge count in sidebar */}
                 {isNotif && unreadCount > 0 && (
                   <span style={{
                     fontSize: 10, fontWeight: 700, padding: "1px 7px",
