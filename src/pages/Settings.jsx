@@ -3,14 +3,14 @@ import { useTheme } from "../components/ThemeContext";
 
 // ─── DUMMY DATA ───────────────────────────────────────────────────────────────
 const PROFILE = {
-  name: "Arjun Mehta",
+  name: "Tester",
   email: "arjun.mehta@shopkart.in",
   phone: "+91 98765 43210",
   role: "Admin",
   company: "ShopKart Pvt. Ltd.",
   timezone: "Asia/Kolkata (IST +5:30)",
   language: "English",
-  avatar: "AM",
+  avatar: "T",
 };
 
 const NOTIFICATION_SETTINGS = [
@@ -216,8 +216,8 @@ function ProfileSection() {
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <AvatarCircle initials={PROFILE.avatar} size={64} />
           <div style={{ flex: 1 }}>
-            <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 16, color: "#000" /* t.textPrimary */ }} />
-            <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 16 }}>{form.name}</p>
+            <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 16, color: "#000"  }} />
+            <p  style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700,  color:"salmon",  fontSize: 16,  }}>{form.name}</p>
             <p style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{form.role} · {form.company}</p>
           </div>
           <GhostBtn small>Change Photo</GhostBtn>

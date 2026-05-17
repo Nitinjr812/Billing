@@ -131,7 +131,7 @@ function AiChatWidget({ t }) {
       {/* Header */}
       <div
         style={{
-          padding: "14px 16px",
+          padding: "12px 14px",
           borderBottom: `1px solid ${t.border}`,
           display: "flex",
           alignItems: "center",
@@ -141,21 +141,21 @@ function AiChatWidget({ t }) {
       >
         <div
           style={{
-            width: 32,
-            height: 32,
-            borderRadius: "10px",
+            width: 30,
+            height: 30,
+            borderRadius: "9px",
             background: `${t.accent}22`,
             border: `1px solid ${t.accent}44`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: "15px",
+            fontSize: "14px",
             flexShrink: 0,
           }}
         >
           ✦
         </div>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <p
             style={{
               fontFamily: "'Syne', sans-serif",
@@ -183,6 +183,7 @@ function AiChatWidget({ t }) {
             border: `1px solid ${t.accent}25`,
             fontFamily: "'DM Sans', sans-serif",
             whiteSpace: "nowrap",
+            flexShrink: 0,
           }}
         >
           May 2024
@@ -194,12 +195,12 @@ function AiChatWidget({ t }) {
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "12px",
+          padding: "10px",
           display: "flex",
           flexDirection: "column",
           gap: "8px",
-          maxHeight: 220,
-          minHeight: 180,
+          maxHeight: 200,
+          minHeight: 160,
         }}
       >
         {messages.map((msg, i) => (
@@ -213,11 +214,11 @@ function AiChatWidget({ t }) {
             <div
               style={{
                 maxWidth: "90%",
-                padding: "8px 12px",
+                padding: "7px 11px",
                 borderRadius:
                   msg.role === "user"
-                    ? "14px 14px 4px 14px"
-                    : "14px 14px 14px 4px",
+                    ? "12px 12px 3px 12px"
+                    : "12px 12px 12px 3px",
                 background:
                   msg.role === "user" ? t.accent : `${t.accent}12`,
                 color: msg.role === "user" ? "#fff" : t.textPrimary,
@@ -239,8 +240,8 @@ function AiChatWidget({ t }) {
           <div style={{ display: "flex", justifyContent: "flex-start" }}>
             <div
               style={{
-                padding: "10px 14px",
-                borderRadius: "14px 14px 14px 4px",
+                padding: "9px 13px",
+                borderRadius: "12px 12px 12px 3px",
                 background: `${t.accent}12`,
                 border: `1px solid ${t.border}`,
                 display: "flex",
@@ -272,7 +273,7 @@ function AiChatWidget({ t }) {
         style={{
           padding: "6px 10px 4px",
           display: "flex",
-          gap: "6px",
+          gap: "5px",
           flexWrap: "wrap",
           flexShrink: 0,
           borderTop: `1px solid ${t.border}`,
@@ -286,7 +287,7 @@ function AiChatWidget({ t }) {
             textTransform: "uppercase",
             letterSpacing: "0.1em",
             color: t.textMuted,
-            margin: "2px 0 4px",
+            margin: "2px 0 3px",
             fontFamily: "'DM Sans', sans-serif",
           }}
         >
@@ -300,7 +301,7 @@ function AiChatWidget({ t }) {
             style={{
               fontSize: "10px",
               fontWeight: 600,
-              padding: "4px 10px",
+              padding: "3px 9px",
               borderRadius: "99px",
               background: `${t.accent}12`,
               border: `1px solid ${t.accent}28`,
@@ -340,21 +341,22 @@ function AiChatWidget({ t }) {
             background: `${t.accent}08`,
             border: `1px solid ${t.border}`,
             borderRadius: "10px",
-            padding: "8px 12px",
+            padding: "7px 10px",
             fontSize: "12px",
             color: t.textPrimary,
             fontFamily: "'DM Sans', sans-serif",
             outline: "none",
             lineHeight: 1.5,
+            minWidth: 0,
           }}
         />
         <button
           onClick={() => sendMessage()}
           disabled={loading || !input.trim()}
           style={{
-            width: 34,
-            height: 34,
-            borderRadius: "10px",
+            width: 32,
+            height: 32,
+            borderRadius: "9px",
             flexShrink: 0,
             background:
               loading || !input.trim() ? `${t.accent}30` : t.accent,
@@ -363,7 +365,7 @@ function AiChatWidget({ t }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: "15px",
+            fontSize: "14px",
             color: "#fff",
             transition: "background 0.2s",
           }}
@@ -391,19 +393,21 @@ function KpiCard({ label, value, trend, trendDir, sub }) {
   return (
     <div
       style={{
-        borderRadius: "16px",
-        padding: "20px",
+        borderRadius: "14px",
+        padding: "14px",
         display: "flex",
         flexDirection: "column",
-        gap: "10px",
+        gap: "8px",
         background: t.bgCard,
         border: `1px solid ${t.border}`,
         transition: "background 0.25s ease, border-color 0.25s ease",
+        minWidth: 0,
+        overflow: "hidden",
       }}
     >
       <p
         style={{
-          fontSize: "10px",
+          fontSize: "9px",
           fontWeight: 600,
           textTransform: "uppercase",
           letterSpacing: "0.1em",
@@ -417,31 +421,33 @@ function KpiCard({ label, value, trend, trendDir, sub }) {
       <p
         style={{
           fontFamily: "'Syne', sans-serif",
-          fontSize: "26px",
+          fontSize: "clamp(16px, 4vw, 24px)",
           fontWeight: 900,
           color: t.textPrimary,
           letterSpacing: "-0.03em",
           lineHeight: 1,
           margin: 0,
+          wordBreak: "break-all",
         }}
       >
         {value}
       </p>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
         <span
           style={{
-            fontSize: "11px",
+            fontSize: "10px",
             fontWeight: 600,
-            padding: "3px 10px",
+            padding: "2px 8px",
             borderRadius: "99px",
             color: colors[trendDir],
             background: bgs[trendDir],
+            whiteSpace: "nowrap",
           }}
         >
           {trend}
         </span>
         {sub && (
-          <span style={{ fontSize: "11px", color: t.textMuted }}>{sub}</span>
+          <span style={{ fontSize: "10px", color: t.textMuted, whiteSpace: "nowrap" }}>{sub}</span>
         )}
       </div>
     </div>
@@ -454,17 +460,19 @@ function ChartCard({ title, sub, children, style = {} }) {
   return (
     <div
       style={{
-        borderRadius: "16px",
-        padding: "20px",
+        borderRadius: "14px",
+        padding: "16px",
         display: "flex",
         flexDirection: "column",
         background: t.bgCard,
         border: `1px solid ${t.border}`,
         transition: "background 0.25s ease, border-color 0.25s ease",
+        minWidth: 0,
+        overflow: "hidden",
         ...style,
       }}
     >
-      <div style={{ marginBottom: "16px" }}>
+      <div style={{ marginBottom: "14px" }}>
         <h3
           style={{
             fontFamily: "'Syne', sans-serif",
@@ -507,7 +515,7 @@ function RevenueChart() {
       {
         type: "line", label: "Trend", data: values,
         borderColor: t.accent, borderWidth: 2.5,
-        pointRadius: 5, pointBackgroundColor: t.accent,
+        pointRadius: 4, pointBackgroundColor: t.accent,
         pointBorderColor: t.bgCard, pointBorderWidth: 2,
         tension: 0.45, fill: false, yAxisID: "y",
       },
@@ -521,11 +529,11 @@ function RevenueChart() {
       tooltip: { ...tooltipDefaults, callbacks: { label: (ctx) => " ₹" + ctx.raw.toLocaleString("en-IN") } },
     },
     scales: {
-      x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 12 } } },
-      y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 11 }, callback: (v) => "₹" + v / 1000 + "k" } },
+      x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 11 } } },
+      y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 10 }, callback: (v) => "₹" + v / 1000 + "k" } },
     },
   };
-  return <div style={{ height: 240 }}><Bar data={data} options={options} /></div>;
+  return <div style={{ height: 220 }}><Bar data={data} options={options} /></div>;
 }
 
 // ─── ORDER DONUT ──────────────────────────────────────────────────────────────
@@ -546,11 +554,11 @@ function OrderDonut() {
   const options = {
     responsive: true, maintainAspectRatio: false, cutout: "70%",
     plugins: {
-      legend: { position: "bottom", labels: { color: t.textMuted, font: { size: 12 }, padding: 14, boxWidth: 10 } },
+      legend: { position: "bottom", labels: { color: t.textMuted, font: { size: 11 }, padding: 12, boxWidth: 10 } },
       tooltip: tooltipDefaults,
     },
   };
-  return <div style={{ height: 240 }}><Doughnut data={data} options={options} /></div>;
+  return <div style={{ height: 220 }}><Doughnut data={data} options={options} /></div>;
 }
 
 // ─── STOCK BAR ────────────────────────────────────────────────────────────────
@@ -574,11 +582,11 @@ function StockBar() {
     indexAxis: "y", responsive: true, maintainAspectRatio: false,
     plugins: { legend: { display: false }, tooltip: tooltipDefaults },
     scales: {
-      x: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 11 } } },
-      y: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 12 } } },
+      x: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 10 } } },
+      y: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 11 } } },
     },
   };
-  return <div style={{ height: 220 }}><Bar data={data} options={options} /></div>;
+  return <div style={{ height: 210 }}><Bar data={data} options={options} /></div>;
 }
 
 // ─── CUSTOMER GROWTH AREA ─────────────────────────────────────────────────────
@@ -603,11 +611,11 @@ function CustomerArea() {
     responsive: true, maintainAspectRatio: false,
     plugins: { legend: { display: false }, tooltip: tooltipDefaults },
     scales: {
-      x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 12 } } },
-      y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 11 } } },
+      x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 11 } } },
+      y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 10 } } },
     },
   };
-  return <div style={{ height: 160 }}><Line data={data} options={options} /></div>;
+  return <div style={{ height: 150 }}><Line data={data} options={options} /></div>;
 }
 
 // ─── INVOICES TABLE ───────────────────────────────────────────────────────────
@@ -627,15 +635,15 @@ function InvoicesTable() {
     Overdue: { color: t.red, bg: t.redBg },
   };
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", minWidth: "280px" }}>
         <thead>
           <tr style={{ borderBottom: `1px solid ${t.border}` }}>
-            {["Invoice", "Customer", "Date", "Amount", "Status"].map((h) => (
+            {["Invoice", "Customer", "Amount", "Status"].map((h) => (
               <th key={h} style={{
-                textAlign: "left", paddingBottom: "10px", fontSize: "10px", fontWeight: 600,
+                textAlign: "left", paddingBottom: "10px", fontSize: "9px", fontWeight: 600,
                 textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted,
-                fontFamily: "'DM Sans', sans-serif",
+                fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap",
               }}>{h}</th>
             ))}
           </tr>
@@ -643,14 +651,14 @@ function InvoicesTable() {
         <tbody>
           {INVOICES.map((inv, i) => (
             <tr key={inv.id} style={{ borderBottom: i < INVOICES.length - 1 ? `1px solid ${t.borderLight}` : "none" }}>
-              <td style={{ padding: "10px 0", fontFamily: "monospace", fontSize: "11px", color: t.textMuted }}>{inv.id}</td>
-              <td style={{ padding: "10px 0", fontWeight: 500, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>{inv.customer}</td>
-              <td style={{ padding: "10px 0", fontSize: "11px", color: t.textMuted }}>{inv.date}</td>
-              <td style={{ padding: "10px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif" }}>{inv.amount}</td>
-              <td style={{ padding: "10px 0" }}>
+              <td style={{ padding: "9px 0", fontFamily: "monospace", fontSize: "10px", color: t.textMuted, whiteSpace: "nowrap" }}>{inv.id}</td>
+              <td style={{ padding: "9px 8px 9px 0", fontWeight: 500, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", maxWidth: "90px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.customer}</td>
+              <td style={{ padding: "9px 8px 9px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>{inv.amount}</td>
+              <td style={{ padding: "9px 0" }}>
                 <span style={{
-                  fontSize: "10px", fontWeight: 600, padding: "3px 9px", borderRadius: "99px",
+                  fontSize: "9px", fontWeight: 600, padding: "2px 8px", borderRadius: "99px",
                   color: statusStyle[inv.status].color, background: statusStyle[inv.status].bg,
+                  whiteSpace: "nowrap",
                 }}>{inv.status}</span>
               </td>
             </tr>
@@ -663,45 +671,74 @@ function InvoicesTable() {
 
 // ─── RESPONSIVE STYLES ────────────────────────────────────────────────────────
 const styles = `
+  /* ── Mobile-first base (320px+) ── */
   .dash-kpi-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
   .dash-main-layout {
     display: grid;
-    grid-template-columns: 1fr 300px;
-    gap: 16px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
     align-items: start;
   }
   .dash-charts-col {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
   }
   .dash-charts-row-1 {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 12px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
   .dash-charts-row-2 {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 12px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
   .dash-ai-sticky {
-    position: sticky;
-    top: 88px;
+    position: static;
   }
 
-  @media (max-width: 900px) {
-    .dash-main-layout { grid-template-columns: 1fr; }
-    .dash-ai-sticky { position: static; }
+  /* ── Tablet (700px+) ── */
+  @media (min-width: 700px) {
+    .dash-kpi-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .dash-charts-row-1 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .dash-charts-row-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
   }
-  @media (max-width: 640px) {
-    .dash-kpi-grid { grid-template-columns: repeat(2, 1fr); }
-    .dash-charts-row-1, .dash-charts-row-2 { grid-template-columns: 1fr; }
-    .dash-main-layout { gap: 12px; }
+
+  /* ── Desktop (1024px+) ── */
+  @media (min-width: 1024px) {
+    .dash-main-layout {
+      grid-template-columns: 1fr 300px;
+      gap: 16px;
+    }
+    .dash-charts-row-2 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .dash-ai-sticky {
+      position: sticky;
+      top: 88px;
+    }
+  }
+
+  /* ── Tiny screens (below 360px) ── */
+  @media (max-width: 359px) {
+    .dash-kpi-grid { gap: 6px; }
+    .dash-charts-row-1,
+    .dash-charts-row-2 { gap: 8px; }
   }
 `;
 
@@ -712,16 +749,20 @@ export default function Dashboard() {
   return (
     <>
       <style>{styles}</style>
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "14px", minWidth: 0, overflow: "hidden" }}>
 
         {/* Page Header */}
         <div>
           <h1 style={{
-            fontFamily: "'Syne', sans-serif", fontSize: "28px", fontWeight: 900,
-            color: t.textPrimary, letterSpacing: "-0.03em",
-            transition: "color 0.25s ease", margin: 0,
+            fontFamily: "'Syne', sans-serif",
+            fontSize: "clamp(20px, 6vw, 28px)",
+            fontWeight: 900,
+            color: t.textPrimary,
+            letterSpacing: "-0.03em",
+            transition: "color 0.25s ease",
+            margin: 0,
           }}>Dashboard</h1>
-          <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
+          <p style={{ fontSize: "12px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
             Welcome back — here's your business at a glance
           </p>
         </div>
@@ -758,7 +799,7 @@ export default function Dashboard() {
 
               <ChartCard title="Customer Growth" sub="Last 5 months">
                 <CustomerArea />
-                <div style={{ marginTop: "12px", display: "flex", gap: "24px" }}>
+                <div style={{ marginTop: "12px", display: "flex", gap: "20px", flexWrap: "wrap" }}>
                   {[["Total", "326"], ["Active", "291"], ["New", "+14"]].map(([l, v]) => (
                     <div key={l}>
                       <p style={{ fontSize: "11px", color: t.textMuted, margin: 0 }}>{l}</p>
@@ -775,7 +816,7 @@ export default function Dashboard() {
 
           </div>
 
-          {/* Right: AI Chat — sticky on desktop */}
+          {/* Right: AI Chat */}
           <div className="dash-ai-sticky">
             <AiChatWidget t={t} />
           </div>
