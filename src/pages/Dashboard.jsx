@@ -12,10 +12,10 @@ ChartJS.register(
   PointElement, ArcElement, Tooltip, Legend, Filler
 );
 const QUICK_PROMPTS = [
-  { label: "📦 Restock kya karein?", text: "Kaun se products urgently restock karne chahiye aur kyun?" },
-  { label: "💸 Slow products?", text: "Kaun se products slow chal rahe hain? Kya offer dena chahiye?" },
-  { label: "🚨 Cancellations?", text: "Cancellation rate kaisi hai? Kya fix karna chahiye?" },
-  { label: "🎯 Best offer idea?", text: "Abhi ke data ke hisaab se konsa offer/flash sale best rahega?" },
+  { label: "📦 Restock alerts", text: "Which products need urgent restocking and why?" },
+  { label: "💸 Slow products?", text: "Which products are slow moving? Should we run any offers?" },
+  { label: "🚨 Cancellations?", text: "How is the cancellation rate? What should we fix?" },
+  { label: "🎯 Best offer idea?", text: "Based on current data, what offer or flash sale would work best?" },
 ];
 
 const BACKEND = "https://billing-backend-tawny.vercel.app";
@@ -116,7 +116,7 @@ function AiChatWidget({ t }) {
       });
 
       const data = await res.json();
-      const reply = data?.reply || "Kuch gadbad hui, dobara try karo.";
+      const reply = data?.reply || "Something went wrong. Please try again.";
       setMessages((prev) => [...prev, { role: "assistant", text: reply }]);
     } catch {
       setMessages((prev) => [
