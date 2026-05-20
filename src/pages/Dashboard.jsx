@@ -11,53 +11,84 @@ ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement,
   PointElement, ArcElement, Tooltip, Legend, Filler
 );
-
-// ─── DASHBOARD CONTEXT FOR AI ─────────────────────────────────────────────────
-const DASHBOARD_CONTEXT = `
-You are an expert business analyst AI assistant embedded in a business analytics dashboard for an Indian e-commerce company. Always respond in clear, professional English. Be concise, insightful, and actionable. Keep responses short (2-4 sentences max) unless asked for detail.
-
-Current business snapshot (May 2024):
-- Total Revenue: ₹4,82,310 (↑12.4% vs last month)
-- Total Orders: 1,248 (↑8.1% vs last month)
-- Average Order Value: ₹3,864 (↑3.9%)
-- Active Customers: 326 (14 new this month)
-- Pending Invoices: ₹38,500 (3 overdue)
-- Cancelled Orders: 88 (7.1% cancellation rate)
-
-Revenue by Category:
-- Electronics: ₹2,18,400 (45.3%)
-- Apparel: ₹1,54,800 (32.1%)
-- Home Goods: ₹1,09,110 (22.6%)
-
-Top Products:
-1. Prod-Gamma — ₹71,400 | 21 orders | +18% growth
-2. Prod-Alpha — ₹58,800 | 49 orders | +12% growth
-3. Prod-Sigma — ₹42,000 | 24 orders | +22% growth (fastest growing)
-
-Stock Alerts:
-- Low Stock: Prod-Delta (42 units), Prod-Zeta (28 units), Prod-Theta (18 units)
-- Out of Stock: Prod-Omega, Prod-Kappa
-
-Monthly Revenue Trend: Nov ₹2.85L → Dec ₹3.20L → Jan ₹2.95L → Feb ₹4.10L → Mar ₹3.70L → Apr ₹4.45L → May ₹4.82L
-
-Order Fulfillment: Delivered 580 | Pending 312 | Processing 268 | Cancelled 88
-
-Always use ₹ for currency. Be direct and data-driven.
-`;
-
 const QUICK_PROMPTS = [
-  { label: "📈 Revenue trend", text: "What's the revenue trend?" },
-  { label: "⚠️ Restock alerts", text: "Which products need urgent restocking?" },
-  { label: "👥 Customer insights", text: "Give me customer insights" },
-  { label: "🚨 Overdue invoices", text: "Tell me about overdue invoices" },
+  { label: "📦 Restock kya karein?", text: "Kaun se products urgently restock karne chahiye aur kyun?" },
+  { label: "💸 Slow products?", text: "Kaun se products slow chal rahe hain? Kya offer dena chahiye?" },
+  { label: "🚨 Cancellations?", text: "Cancellation rate kaisi hai? Kya fix karna chahiye?" },
+  { label: "🎯 Best offer idea?", text: "Abhi ke data ke hisaab se konsa offer/flash sale best rahega?" },
 ];
 
-// ─── AI CHAT WIDGET ───────────────────────────────────────────────────────────
+const BACKEND = "https://billing-backend-tawny.vercel.app";
+
+async function fetchLiveDashboardContext() {
+  try {
+    const [statsRes, productsRes, alertsRes, ordersRes] = await Promise.all([
+      fetch(`${BACKEND}/api/orders/stats`),
+      fetch(`${BACKEND}/api/products`),
+      fetch(`${BACKEND}/api/products/alerts`),
+      fetch(`${BACKEND}/api/orders`),
+    ]);
+
+    const stats = await statsRes.json();
+    const products = await productsRes.json();
+    const alerts = await alertsRes.json();
+    const orders = await ordersRes.json();
+
+    // Top 5 orders by amount
+    const topOrders = [...orders]
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+
+    // Category revenue breakdown
+    const categoryRevenue = orders.reduce((acc, o) => {
+      if (o.status !== "Cancelled") {
+        acc[o.product] = (acc[o.product] || 0) + o.amount;
+      }
+      return acc;
+    }, {});
+
+    return `
+You are an expert business analyst AI assistant embedded in a live business analytics dashboard.
+Always respond in clear, professional English. Be concise, insightful, and actionable (2-4 sentences max unless asked for detail).
+Always use ₹ for currency. Be direct and data-driven.
+
+=== LIVE BUSINESS SNAPSHOT ===
+- Total Orders: ${stats.total}
+- Total Revenue: ₹${stats.totalRevenue?.toLocaleString("en-IN")}
+- Delivered: ${stats.delivered} | Pending: ${stats.pending} | Processing: ${stats.processing} | Cancelled: ${stats.cancelled}
+- Cancellation Rate: ${stats.total ? ((stats.cancelled / stats.total) * 100).toFixed(1) : 0}%
+
+=== PRODUCTS IN STOCK ===
+${products.map((p) => `- ${p.name} (${p.category}): ${p.stock} units @ ₹${p.price?.toLocaleString("en-IN")} | Growth: +${p.growthPercent}%`).join("\n")}
+
+=== STOCK ALERTS ===
+Low Stock: ${alerts.lowStock?.map((p) => `${p.name} (${p.stock} units)`).join(", ") || "None"}
+Out of Stock: ${alerts.outOfStock?.map((p) => p.name).join(", ") || "None"}
+
+=== TOP 5 ORDERS ===
+${topOrders.map((o) => `- ${o.orderId} | ${o.customer} | ₹${o.amount?.toLocaleString("en-IN")} | ${o.status}`).join("\n")}
+
+=== REVENUE BY PRODUCT ===
+${Object.entries(categoryRevenue)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([name, rev]) => `- ${name}: ₹${rev.toLocaleString("en-IN")}`)
+        .join("\n")}
+    `.trim();
+  } catch (err) {
+    // Fallback to static context if backend is down
+    return `
+You are a business analyst AI. The live backend is currently unavailable.
+Let the user know data may not be real-time, but assist with general business queries.
+    `.trim();
+  }
+}
+
 function AiChatWidget({ t }) {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      text: "👋 Hi! I'm your AI Analyst. Ask me anything about today's dashboard — revenue, stock, customers, or invoices.",
+      text: "👋 Hi! I'm your AI Analyst — connected to live data. Ask me about orders, stock, revenue, or alerts!",
     },
   ]);
   const [input, setInput] = useState("");
@@ -78,26 +109,14 @@ function AiChatWidget({ t }) {
     setLoading(true);
 
     try {
-      const apiMessages = newMessages.map((m) => ({
-        role: m.role === "assistant" ? "assistant" : "user",
-        content: m.text,
-      }));
-
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("https://billing-backend-tawny.vercel.app/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: DASHBOARD_CONTEXT,
-          messages: apiMessages,
-        }),
+        body: JSON.stringify({ message: userText }), // sirf latest message
       });
 
       const data = await res.json();
-      const reply =
-        data?.content?.[0]?.text ||
-        "Something went wrong. Please try again.";
+      const reply = data?.reply || "Kuch gadbad hui, dobara try karo.";
       setMessages((prev) => [...prev, { role: "assistant", text: reply }]);
     } catch {
       setMessages((prev) => [
@@ -107,15 +126,14 @@ function AiChatWidget({ t }) {
     } finally {
       setLoading(false);
     }
-  };
 
+  };
   const handleKey = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
   };
-
   return (
     <div
       style={{
