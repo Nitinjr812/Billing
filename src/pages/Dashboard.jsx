@@ -582,17 +582,27 @@ function OrderDonut() {
 // ─── STOCK BAR ────────────────────────────────────────────────────────────────
 function StockBar() {
   const { t } = useTheme();
+  const [products, setProducts] = useState([]);
+
+  useEffect(() => {
+    fetch(`${BACKEND}/api/products`)
+      .then((res) => res.json())
+      .then((data) => setProducts(data.slice(0, 5)))
+      .catch(() => setProducts([]));
+  }, []);
+
   const tooltipDefaults = {
     backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1,
     titleColor: t.tooltipTitle, bodyColor: t.tooltipBody,
   };
+  const palette = [t.orange, t.green, t.blue, t.accentLight, "#a855f7"];
   const data = {
-    labels: ["Prod-Alpha", "Prod-Beta", "Prod-Gamma", "Prod-Delta", "Prod-Sigma"],
+    labels: products.map((p) => p.name),
     datasets: [{
       label: "In Stock",
-      data: [420, 280, 610, 190, 380],
-      backgroundColor: [`${t.orange}20`, `${t.green}20`, `${t.blue}20`, `${t.orange}20`, "#a855f720"],
-      borderColor: [t.orange, t.green, t.blue, t.accentLight, "#a855f7"],
+      data: products.map((p) => p.stock),
+      backgroundColor: products.map((_, i) => `${palette[i % palette.length]}20`),
+      borderColor: products.map((_, i) => palette[i % palette.length]),
       borderWidth: 1.5, borderRadius: 5,
     }],
   };
@@ -604,6 +614,7 @@ function StockBar() {
       y: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 11 } } },
     },
   };
+  if (!products.length) return <p style={{ color: t.textMuted, fontSize: 12 }}>Loading stock data...</p>;
   return <div style={{ height: 210 }}><Bar data={data} options={options} /></div>;
 }
 

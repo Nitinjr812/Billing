@@ -1,26 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 
-// ─── DUMMY DATA ───────────────────────────────────────────────────────────────
-const PROFILE = {
-  name: "Tester",
-  email: "arjun.mehta@shopkart.in",
-  phone: "+91 98765 43210",
-  role: "Admin",
-  company: "ShopKart Pvt. Ltd.",
-  timezone: "Asia/Kolkata (IST +5:30)",
-  language: "English",
-  avatar: "T",
-};
-
-const NOTIFICATION_SETTINGS = [
-  { id: "rev_alert",  label: "Revenue Alerts",        desc: "Notify when daily revenue crosses threshold",  enabled: true  },
-  { id: "ord_alert",  label: "New Orders",             desc: "Real-time alerts for incoming orders",          enabled: true  },
-  { id: "inv_alert",  label: "Low Inventory Warnings", desc: "Alert when stock falls below minimum level",    enabled: true  },
-  { id: "can_alert",  label: "Cancellation Spikes",    desc: "Notify when cancellation rate exceeds 8%",     enabled: false },
-  { id: "cust_alert", label: "New Customer Sign-ups",  desc: "Daily digest of new customer registrations",   enabled: false },
-  { id: "rep_alert",  label: "Weekly Reports",         desc: "Auto-email full report every Monday 9 AM",     enabled: true  },
-];
+const BACKEND = "https://billing-backend-tawny.vercel.app";
 
 const INTEGRATIONS = [
   { name: "Razorpay",     desc: "Payment gateway",           status: "connected", icon: "💳", color: "#2563eb" },
@@ -29,13 +11,6 @@ const INTEGRATIONS = [
   { name: "Mailchimp",    desc: "Email marketing",           status: "pending",   icon: "📧", color: "#f59e0b" },
   { name: "Google Ads",   desc: "Ad campaign management",    status: "disconnected", icon: "📣", color: "#ef4444" },
   { name: "Tally Prime",  desc: "Accounting software",       status: "disconnected", icon: "📒", color: "#8b5cf6" },
-];
-
-const TEAM_MEMBERS = [
-  { name: "Arjun Mehta",   email: "arjun.mehta@shopkart.in",  role: "Admin",   avatar: "AM", active: true  },
-  { name: "Priya Sharma",  email: "priya.sharma@shopkart.in", role: "Manager", avatar: "PS", active: true  },
-  { name: "Rohan Gupta",   email: "rohan.g@shopkart.in",      role: "Analyst", avatar: "RG", active: true  },
-  { name: "Sneha Verma",   email: "sneha.v@shopkart.in",      role: "Support", avatar: "SV", active: false },
 ];
 
 const BILLING = {
@@ -48,14 +23,42 @@ const BILLING = {
 
 const NAV_ITEMS = [
   { id: "profile",       label: "Profile",        icon: "◉" },
-  { id: "notifications", label: "Notifications",  icon: "◎" }, 
+  { id: "notifications", label: "Notifications",  icon: "◎" },
   { id: "integrations",  label: "Integrations",   icon: "◫" },
   { id: "team",          label: "Team & Access",  icon: "◬" },
   { id: "billing",       label: "Billing",        icon: "◷" },
   { id: "security",      label: "Security",       icon: "◰" },
 ];
 
-// ─── REUSABLE ATOMS ───────────────────────────────────────────────────────────
+const NOTIF_LABELS = {
+  revenueAlerts:      { label: "Revenue Alerts",        desc: "Notify when daily revenue crosses threshold" },
+  newOrders:          { label: "New Orders",             desc: "Real-time alerts for incoming orders" },
+  lowInventory:       { label: "Low Inventory Warnings", desc: "Alert when stock falls below minimum level" },
+  cancellationSpikes: { label: "Cancellation Spikes",    desc: "Notify when cancellation rate exceeds 8%" },
+  newCustomers:       { label: "New Customer Sign-ups",  desc: "Daily digest of new customer registrations" },
+  weeklyReports:      { label: "Weekly Reports",         desc: "Auto-email full report every Monday 9 AM" },
+};
+
+// ── Small fetch helper with auth header ────────────────────────────────
+function useApi() {
+  const { token, logout } = useAuth();
+  return async (path, options = {}) => {
+    const res = await fetch(`${BACKEND}/api${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        ...(options.headers || {}),
+      },
+    });
+    if (res.status === 401) { logout(); throw new Error("Session expired, please login again"); }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Request failed");
+    return data;
+  };
+}
+
+// ─── REUSABLE ATOMS (unchanged) ───────────────────────────────────────────
 function SectionTitle({ children, sub }) {
   const { t } = useTheme();
   return (
@@ -89,7 +92,7 @@ function Label({ children }) {
   );
 }
 
-function Input({ value, onChange, placeholder, type = "text" }) {
+function Input({ value, onChange, placeholder, type = "text", disabled }) {
   const { t } = useTheme();
   return (
     <input
@@ -97,9 +100,10 @@ function Input({ value, onChange, placeholder, type = "text" }) {
       value={value}
       onChange={onChange}
       placeholder={placeholder}
+      disabled={disabled}
       style={{
         width: "100%", boxSizing: "border-box",
-        background: `${t.accent}08`, border: `1px solid ${t.border}`,
+        background: disabled ? `${t.border}30` : `${t.accent}08`, border: `1px solid ${t.border}`,
         borderRadius: 10, padding: "9px 12px",
         fontSize: 13, color: t.textPrimary,
         fontFamily: "'DM Sans', sans-serif", outline: "none",
@@ -113,7 +117,7 @@ function Toggle({ on, onChange }) {
   const { t } = useTheme();
   return (
     <div
-      onClick={() => onChange(!on)}
+      onClick={onChange}
       style={{
         width: 40, height: 22, borderRadius: 99,
         background: on ? t.accent : t.border,
@@ -148,36 +152,38 @@ function Badge({ status }) {
   );
 }
 
-function PrimaryBtn({ children, onClick, danger, small }) {
+function PrimaryBtn({ children, onClick, danger, small, disabled }) {
   const { t } = useTheme();
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       style={{
         background: danger ? t.red : t.accent,
         color: "#fff", border: "none", borderRadius: 10,
         padding: small ? "6px 14px" : "9px 18px",
         fontSize: small ? 11 : 13, fontWeight: 600,
-        fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
+        fontFamily: "'DM Sans', sans-serif", cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
         transition: "opacity 0.15s",
       }}
-      onMouseEnter={e => e.target.style.opacity = 0.85}
-      onMouseLeave={e => e.target.style.opacity = 1}
     >{children}</button>
   );
 }
 
-function GhostBtn({ children, onClick, small }) {
+function GhostBtn({ children, onClick, small, disabled }) {
   const { t } = useTheme();
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       style={{
         background: "transparent", color: t.textMuted,
         border: `1px solid ${t.border}`, borderRadius: 10,
         padding: small ? "6px 14px" : "9px 18px",
         fontSize: small ? 11 : 13, fontWeight: 600,
-        fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
+        fontFamily: "'DM Sans', sans-serif", cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
         transition: "border-color 0.15s",
       }}
     >{children}</button>
@@ -197,120 +203,163 @@ function AvatarCircle({ initials, size = 40 }) {
   );
 }
 
-function Divider() {
-  const { t } = useTheme();
-  return <div style={{ height: 1, background: t.border, margin: "20px 0" }} />;
+function getInitials(name = "") {
+  return name.trim().split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() || "U";
 }
 
-// ─── SECTION: PROFILE ─────────────────────────────────────────────────────────
+// ─── SECTION: PROFILE (DYNAMIC) ───────────────────────────────────────────
 function ProfileSection() {
-  const [form, setForm] = useState({ ...PROFILE });
+  const { t } = useTheme();
+  const api = useApi();
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    api("/settings/profile").then(setForm).catch((e) => setMsg(e.message));
+  }, []);
+
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMsg("");
+    try {
+      await api("/settings/profile", {
+        method: "PUT",
+        body: JSON.stringify({ name: form.name, phone: form.phone }),
+      });
+      setMsg("✅ Profile updated!");
+    } catch (e) {
+      setMsg("❌ " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!form) return <p style={{ color: t.textMuted, fontSize: 13 }}>Loading profile...</p>;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SectionTitle sub="Manage your personal information and preferences">Profile</SectionTitle>
+      <SectionTitle sub="Manage your personal information">Profile</SectionTitle>
 
-      {/* Avatar row */}
       <Card>
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <AvatarCircle initials={PROFILE.avatar} size={64} />
+          <AvatarCircle initials={getInitials(form.name)} size={64} />
           <div style={{ flex: 1 }}>
-            <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 16, color: "#000"  }} />
-            <p  style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700,  color:"salmon",  fontSize: 16,  }}>{form.name}</p>
-            <p style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{form.role} · {form.company}</p>
+            <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 16, color: t.textPrimary }}>{form.name}</p>
+            <p style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+              {form.role === "owner" ? "Owner" : "Staff"} · {form.company || "—"}
+            </p>
           </div>
-          <GhostBtn small>Change Photo</GhostBtn>
         </div>
       </Card>
 
-      {/* Fields */}
       <Card>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 20px" }}>
-          {[
-            ["Full Name",   "name",     form.name,     "Your full name"],
-            ["Email",       "email",    form.email,    "your@email.com"],
-            ["Phone",       "phone",    form.phone,    "+91 XXXXX XXXXX"],
-            ["Role",        "role",     form.role,     "e.g. Admin"],
-            ["Company",     "company",  form.company,  "Company name"],
-            ["Timezone",    "timezone", form.timezone, "Timezone"],
-          ].map(([label, key, val, placeholder]) => (
-            <div key={key}>
-              <Label>{label}</Label>
-              <Input value={val} onChange={set(key)} placeholder={placeholder} />
-            </div>
-          ))}
+          <div>
+            <Label>Full Name</Label>
+            <Input value={form.name} onChange={set("name")} placeholder="Your full name" />
+          </div>
+          <div>
+            <Label>Email (fixed)</Label>
+            <Input value={form.email} disabled />
+          </div>
+          <div>
+            <Label>Phone</Label>
+            <Input value={form.phone} onChange={set("phone")} placeholder="+91 XXXXX XXXXX" />
+          </div>
+          <div>
+            <Label>Role (fixed)</Label>
+            <Input value={form.role} disabled />
+          </div>
+          <div>
+            <Label>Shop / Company</Label>
+            <Input value={form.company} disabled />
+          </div>
+          <div>
+            <Label>Shop ID</Label>
+            <Input value={form.shopId} disabled />
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
-          <GhostBtn>Discard</GhostBtn>
-          <PrimaryBtn>Save Changes</PrimaryBtn>
-        </div>
-      </Card>
 
-      {/* Danger Zone */}
-      <Card>
-        <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 13, color: "#ef4444", marginBottom: 4 }}>Danger Zone</p>
-        <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 14 }}>Permanently delete your account and all associated data. This action cannot be undone.</p>
-        <PrimaryBtn danger small>Delete Account</PrimaryBtn>
+        {msg && <p style={{ fontSize: 12, marginTop: 12, color: msg.startsWith("✅") ? t.green : t.red }}>{msg}</p>}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+          <PrimaryBtn onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save Changes"}</PrimaryBtn>
+        </div>
       </Card>
     </div>
   );
 }
 
-// ─── SECTION: NOTIFICATIONS ───────────────────────────────────────────────────
+// ─── SECTION: NOTIFICATIONS (DYNAMIC) ─────────────────────────────────────
 function NotificationsSection() {
   const { t } = useTheme();
-  const [settings, setSettings] = useState(NOTIFICATION_SETTINGS);
-  const toggle = (id) => setSettings((s) => s.map((n) => n.id === id ? { ...n, enabled: !n.enabled } : n));
+  const api = useApi();
+  const [settings, setSettings] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    api("/settings/notifications").then(setSettings).catch((e) => setMsg(e.message));
+  }, []);
+
+  const toggle = (key) => setSettings((s) => ({ ...s, [key]: !s[key] }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMsg("");
+    try {
+      await api("/settings/notifications", { method: "PUT", body: JSON.stringify(settings) });
+      setMsg("✅ Preferences saved!");
+    } catch (e) {
+      setMsg("❌ " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!settings) return <p style={{ color: t.textMuted, fontSize: 13 }}>Loading...</p>;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <SectionTitle sub="Choose what alerts and updates you receive">Notifications</SectionTitle>
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        {settings.map((n, i) => (
-          <div key={n.id} style={{
+        {Object.entries(NOTIF_LABELS).map(([key, meta], i, arr) => (
+          <div key={key} style={{
             display: "flex", alignItems: "center", gap: 16,
             padding: "16px 24px",
-            borderBottom: i < settings.length - 1 ? `1px solid ${t.border}` : "none",
+            borderBottom: i < arr.length - 1 ? `1px solid ${t.border}` : "none",
           }}>
             <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>{n.label}</p>
-              <p style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{n.desc}</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>{meta.label}</p>
+              <p style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{meta.desc}</p>
             </div>
-            <Toggle on={n.enabled} onChange={() => toggle(n.id)} />
+            <Toggle on={settings[key]} onChange={() => toggle(key)} />
           </div>
         ))}
       </Card>
 
-      <Card>
-        <Label>Alert Email</Label>
-        <Input value={PROFILE.email} />
-        <p style={{ fontSize: 11, color: "#6b7280", marginTop: 6 }}>All notification emails will be sent to this address.</p>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-          <PrimaryBtn>Save Preferences</PrimaryBtn>
-        </div>
-      </Card>
+      {msg && <p style={{ fontSize: 12, color: msg.startsWith("✅") ? t.green : t.red }}>{msg}</p>}
+
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <PrimaryBtn onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save Preferences"}</PrimaryBtn>
+      </div>
     </div>
   );
 }
- 
 
-// ─── SECTION: INTEGRATIONS ────────────────────────────────────────────────────
+// ─── SECTION: INTEGRATIONS (STILL DEMO — future scope) ────────────────────
 function IntegrationsSection() {
   const { t } = useTheme();
   const [list, setList] = useState(INTEGRATIONS);
   const toggle = (name) =>
-    setList((l) =>
-      l.map((i) =>
-        i.name === name
-          ? { ...i, status: i.status === "connected" ? "disconnected" : "connected" }
-          : i
-      )
-    );
+    setList((l) => l.map((i) => i.name === name ? { ...i, status: i.status === "connected" ? "disconnected" : "connected" } : i));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SectionTitle sub="Connect third-party services to your dashboard">Integrations</SectionTitle>
+      <SectionTitle sub="Connect third-party services (demo — coming soon)">Integrations</SectionTitle>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px,1fr))", gap: 12 }}>
         {list.map((intg) => (
           <Card key={intg.name} style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -341,33 +390,67 @@ function IntegrationsSection() {
   );
 }
 
-// ─── SECTION: TEAM ────────────────────────────────────────────────────────────
+// ─── SECTION: TEAM (DYNAMIC) ──────────────────────────────────────────────
 function TeamSection() {
   const { t } = useTheme();
-  const roleColors = { Admin: t.accent, Manager: t.blue, Analyst: t.green, Support: t.orange };
+  const { user } = useAuth();
+  const api = useApi();
+  const [members, setMembers] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const loadTeam = () => api("/settings/team").then(setMembers).catch((e) => setMsg(e.message));
+
+  useEffect(() => { loadTeam(); }, []);
+
+  const handleRemove = async (memberId, name) => {
+    if (!window.confirm(`Remove ${name} from your shop?`)) return;
+    try {
+      await api(`/settings/team/${memberId}`, { method: "DELETE" });
+      loadTeam();
+    } catch (e) {
+      alert("❌ " + e.message);
+    }
+  };
+
+  const copyShopId = () => {
+    navigator.clipboard.writeText(user.shopId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const roleColors = { owner: t.accent, staff: t.blue };
+
+  if (!members) return <p style={{ color: t.textMuted, fontSize: 13 }}>Loading team...</p>;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SectionTitle sub="Manage team members and their access levels">Team & Access</SectionTitle>
+      <SectionTitle sub="Manage team members and their access">Team & Access</SectionTitle>
 
-      {/* Invite */}
-      <Card>
-        <Label>Invite Team Member</Label>
-        <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-          <div style={{ flex: 1 }}><Input placeholder="teammate@shopkart.in" /></div>
-          <PrimaryBtn>Send Invite</PrimaryBtn>
-        </div>
-      </Card>
+      {/* Invite via Shop ID */}
+      {user.role === "owner" && (
+        <Card>
+          <Label>Invite Team Member</Label>
+          <p style={{ fontSize: 12, color: t.textMuted, margin: "6px 0 10px" }}>
+            Naye staff member ko ye Shop ID do — wo signup page pe "Join Shop (Staff)" se join kar sakte hain.
+          </p>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1 }}><Input value={user.shopId} disabled /></div>
+            <PrimaryBtn onClick={copyShopId}>{copied ? "Copied!" : "Copy"}</PrimaryBtn>
+          </div>
+        </Card>
+      )}
+
+      {msg && <p style={{ fontSize: 12, color: t.red }}>{msg}</p>}
 
       {/* Member list */}
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        {TEAM_MEMBERS.map((m, i) => (
-          <div key={m.email} style={{
+        {members.map((m, i) => (
+          <div key={m._id} style={{
             display: "flex", alignItems: "center", gap: 14, padding: "14px 24px",
-            borderBottom: i < TEAM_MEMBERS.length - 1 ? `1px solid ${t.border}` : "none",
-            opacity: m.active ? 1 : 0.5,
+            borderBottom: i < members.length - 1 ? `1px solid ${t.border}` : "none",
           }}>
-            <AvatarCircle initials={m.avatar} size={36} />
+            <AvatarCircle initials={getInitials(m.name)} size={36} />
             <div style={{ flex: 1 }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>{m.name}</p>
               <p style={{ fontSize: 11, color: t.textMuted }}>{m.email}</p>
@@ -376,11 +459,11 @@ function TeamSection() {
               fontSize: 10, fontWeight: 600, padding: "3px 10px", borderRadius: 99,
               color: roleColors[m.role] || t.accent,
               background: `${roleColors[m.role] || t.accent}18`,
+              textTransform: "capitalize",
             }}>{m.role}</span>
-            <span style={{ fontSize: 10, color: m.active ? t.green : t.textMuted, fontWeight: 600 }}>
-              {m.active ? "● Active" : "○ Inactive"}
-            </span>
-            <GhostBtn small>Manage</GhostBtn>
+            {user.role === "owner" && m.role !== "owner" && (
+              <GhostBtn small onClick={() => handleRemove(m._id, m.name)}>Remove</GhostBtn>
+            )}
           </div>
         ))}
       </Card>
@@ -388,15 +471,12 @@ function TeamSection() {
   );
 }
 
-// ─── SECTION: BILLING ─────────────────────────────────────────────────────────
+// ─── SECTION: BILLING (STILL DEMO) ─────────────────────────────────────────
 function BillingSection() {
   const { t } = useTheme();
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SectionTitle sub="Manage your subscription and usage">Billing</SectionTitle>
-
-      {/* Plan card */}
+      <SectionTitle sub="Manage your subscription and usage (demo — coming soon)">Billing</SectionTitle>
       <Card style={{ display: "flex", alignItems: "center", gap: 20 }}>
         <div style={{
           width: 50, height: 50, borderRadius: 14, flexShrink: 0,
@@ -413,108 +493,51 @@ function BillingSection() {
           <GhostBtn small>Upgrade</GhostBtn>
         </div>
       </Card>
-
-      {/* Usage bars */}
-      <Card>
-        <Label>Current Usage</Label>
-        {[
-          ["API Calls",     BILLING.usage.api,     t.accent ],
-          ["Storage",       BILLING.usage.storage,  t.blue   ],
-          ["Team Seats",    BILLING.usage.seats,    t.green  ],
-        ].map(([label, pct, color]) => (
-          <div key={label} style={{ marginTop: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span style={{ fontSize: 12, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>{label}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: t.textPrimary }}>{pct}%</span>
-            </div>
-            <div style={{ height: 6, borderRadius: 99, background: `${color}20` }}>
-              <div style={{ width: `${pct}%`, height: "100%", borderRadius: 99, background: color, transition: "width 0.5s" }} />
-            </div>
-          </div>
-        ))}
-      </Card>
-
-      {/* Invoices stub */}
-      <Card>
-        <Label>Recent Invoices</Label>
-        {[
-          ["Jan 2025", "₹14,999", "Paid"],
-          ["Jan 2024", "₹12,999", "Paid"],
-          ["Jan 2023", "₹9,999",  "Paid"],
-        ].map(([date, amt, status]) => (
-          <div key={date} style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "10px 0", borderBottom: `1px solid ${t.border}`,
-          }}>
-            <span style={{ fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>{date}</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif" }}>{amt}</span>
-            <Badge status="connected" />
-            <GhostBtn small>Download</GhostBtn>
-          </div>
-        ))}
-      </Card>
     </div>
   );
 }
 
-// ─── SECTION: SECURITY ────────────────────────────────────────────────────────
+// ─── SECTION: SECURITY (DYNAMIC password, sessions still demo) ────────────
 function SecuritySection() {
   const { t } = useTheme();
-  const [twofa, setTwofa] = useState(true);
-  const [sessions] = useState([
-    { device: "Chrome on Mac",    location: "Jaipur, IN",   last: "Now",          current: true  },
-    { device: "Safari on iPhone", location: "Jaipur, IN",   last: "2 hours ago",  current: false },
-    { device: "Chrome on Windows",location: "Delhi, IN",    last: "3 days ago",   current: false },
-  ]);
+  const api = useApi();
+  const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const handleChangePassword = async () => {
+    setMsg("");
+    if (pw.next !== pw.confirm) return setMsg("❌ New passwords don't match");
+    setSaving(true);
+    try {
+      await api("/settings/password", {
+        method: "PUT",
+        body: JSON.stringify({ currentPassword: pw.current, newPassword: pw.next }),
+      });
+      setMsg("✅ Password updated!");
+      setPw({ current: "", next: "", confirm: "" });
+    } catch (e) {
+      setMsg("❌ " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <SectionTitle sub="Keep your account safe and secure">Security</SectionTitle>
 
-      {/* Change password */}
       <Card>
         <Label>Change Password</Label>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
-          <Input type="password" placeholder="Current password" />
-          <Input type="password" placeholder="New password" />
-          <Input type="password" placeholder="Confirm new password" />
+          <Input type="password" placeholder="Current password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} />
+          <Input type="password" placeholder="New password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
+          <Input type="password" placeholder="Confirm new password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} />
         </div>
+        {msg && <p style={{ fontSize: 12, marginTop: 10, color: msg.startsWith("✅") ? t.green : t.red }}>{msg}</p>}
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-          <PrimaryBtn>Update Password</PrimaryBtn>
+          <PrimaryBtn onClick={handleChangePassword} disabled={saving}>{saving ? "Updating..." : "Update Password"}</PrimaryBtn>
         </div>
-      </Card>
-
-      {/* 2FA */}
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, color: t.textPrimary }}>Two-Factor Authentication</p>
-            <p style={{ fontSize: 12, color: t.textMuted, marginTop: 3 }}>Add an extra layer of security with OTP on login</p>
-          </div>
-          <Toggle on={twofa} onChange={setTwofa} />
-        </div>
-      </Card>
-
-      {/* Active sessions */}
-      <Card style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "16px 24px", borderBottom: `1px solid ${t.border}` }}>
-          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, color: t.textPrimary }}>Active Sessions</p>
-        </div>
-        {sessions.map((s, i) => (
-          <div key={i} style={{
-            display: "flex", alignItems: "center", gap: 14, padding: "14px 24px",
-            borderBottom: i < sessions.length - 1 ? `1px solid ${t.border}` : "none",
-          }}>
-            <div style={{ fontSize: 22 }}>{s.device.includes("iPhone") ? "📱" : "💻"}</div>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>
-                {s.device} {s.current && <span style={{ fontSize: 10, fontWeight: 600, color: t.green, background: `${t.green}18`, padding: "2px 8px", borderRadius: 99, marginLeft: 6 }}>Current</span>}
-              </p>
-              <p style={{ fontSize: 11, color: t.textMuted }}>{s.location} · {s.last}</p>
-            </div>
-            {!s.current && <GhostBtn small>Revoke</GhostBtn>}
-          </div>
-        ))}
       </Card>
     </div>
   );
@@ -527,7 +550,7 @@ export default function Settings() {
 
   const sectionMap = {
     profile:       <ProfileSection />,
-    notifications: <NotificationsSection />, 
+    notifications: <NotificationsSection />,
     integrations:  <IntegrationsSection />,
     team:          <TeamSection />,
     billing:       <BillingSection />,
@@ -544,69 +567,46 @@ export default function Settings() {
       `}</style>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-        {/* Header */}
         <div>
-          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", transition: "color 0.25s ease" }}>Settings</h1>
+          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em" }}>Settings</h1>
           <p style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>Manage your account, preferences, and team</p>
         </div>
 
-        {/* Mobile tab row */}
-        <div className="settings-nav-mobile" style={{
-          gap: 6, overflowX: "auto", paddingBottom: 4,
-          scrollbarWidth: "none",
-        }}>
+        <div className="settings-nav-mobile" style={{ gap: 6, overflowX: "auto", paddingBottom: 4, scrollbarWidth: "none" }}>
           {NAV_ITEMS.map((n) => (
-            <button
-              key={n.id}
-              onClick={() => setActive(n.id)}
-              style={{
-                flexShrink: 0, padding: "6px 14px", borderRadius: 99,
-                border: `1.5px solid ${active === n.id ? t.accent : t.border}`,
-                background: active === n.id ? `${t.accent}15` : "transparent",
-                color: active === n.id ? t.accent : t.textMuted,
-                fontSize: 12, fontWeight: 600, cursor: "pointer",
-                fontFamily: "'DM Sans', sans-serif", transition: "all 0.15s",
-              }}
-            >{n.label}</button>
+            <button key={n.id} onClick={() => setActive(n.id)} style={{
+              flexShrink: 0, padding: "6px 14px", borderRadius: 99,
+              border: `1.5px solid ${active === n.id ? t.accent : t.border}`,
+              background: active === n.id ? `${t.accent}15` : "transparent",
+              color: active === n.id ? t.accent : t.textMuted,
+              fontSize: 12, fontWeight: 600, cursor: "pointer",
+              fontFamily: "'DM Sans', sans-serif", transition: "all 0.15s",
+            }}>{n.label}</button>
           ))}
         </div>
 
-        {/* Main layout */}
         <div className="settings-layout">
-
-          {/* Sidebar nav */}
           <div className="settings-nav-desktop" style={{ position: "sticky", top: 88 }}>
             <Card style={{ padding: "8px 0" }}>
               {NAV_ITEMS.map((n) => (
-                <button
-                  key={n.id}
-                  onClick={() => setActive(n.id)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    width: "100%", padding: "10px 18px",
-                    background: active === n.id ? `${t.accent}12` : "transparent",
-                    border: "none",
-                    borderLeft: `3px solid ${active === n.id ? t.accent : "transparent"}`,
-                    borderRadius: 0,
-                    color: active === n.id ? t.accent : t.textMuted,
-                    fontSize: 13, fontWeight: active === n.id ? 700 : 500,
-                    fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
-                    textAlign: "left", transition: "all 0.15s",
-                  }}
-                >
+                <button key={n.id} onClick={() => setActive(n.id)} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  width: "100%", padding: "10px 18px",
+                  background: active === n.id ? `${t.accent}12` : "transparent",
+                  border: "none",
+                  borderLeft: `3px solid ${active === n.id ? t.accent : "transparent"}`,
+                  color: active === n.id ? t.accent : t.textMuted,
+                  fontSize: 13, fontWeight: active === n.id ? 700 : 500,
+                  fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
+                  textAlign: "left", transition: "all 0.15s",
+                }}>
                   <span style={{ fontSize: 15 }}>{n.icon}</span>
                   {n.label}
                 </button>
               ))}
             </Card>
           </div>
-
-          {/* Content area */}
-          <div>
-            {sectionMap[active]}
-          </div>
-
+          <div>{sectionMap[active]}</div>
         </div>
       </div>
     </>
