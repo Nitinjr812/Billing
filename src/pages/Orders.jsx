@@ -1,5 +1,9 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useTheme } from "../components/ThemeContext";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+
+const BACKEND = "https://billing-backend-tawny.vercel.app";
 
 // ─── DUMMY DATA ───────────────────────────────────────────────────────────────
 const ORDERS = [
@@ -23,6 +27,8 @@ const ORDERS = [
 const CATEGORIES = ["All", "Electronics", "Apparel", "Home Goods"];
 const STATUSES   = ["All", "Delivered", "Shipped", "Processing", "Pending", "Cancelled"];
 const PAYMENTS   = ["All", "Paid", "Pending", "Failed"];
+
+let invoiceCounter = 1000;
 
 // ─── STAT CARD ────────────────────────────────────────────────────────────────
 function StatCard({ label, value, trend, trendDir, sub }) {
@@ -58,6 +64,289 @@ function StatCard({ label, value, trend, trendDir, sub }) {
   );
 }
 
+// ─── CREATE INVOICE MODAL ──────────────────────────────────────────────────
+function CreateInvoiceModal({ onClose, t }) {
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [items, setItems] = useState([{ name: "", qty: 1, price: 0 }]);
+
+  const [listening, setListening] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [err, setErr] = useState("");
+  const recognitionRef = useRef(null);
+
+  // ── Voice recognition (browser native — Chrome only) ──
+  const startListening = () => {
+    setErr("");
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setErr("❌ Voice recognition sirf Chrome browser mein kaam karta hai");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-IN"; // Hindi ke liye "hi-IN" try kar sakte ho
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setListening(true);
+    recognition.onerror = () => { setListening(false); setErr("❌ Voice capture mein error aaya"); };
+    recognition.onend = () => setListening(false);
+    recognition.onresult = (event) => {
+      const text = event.results[0][0].transcript;
+      setTranscript((prev) => (prev ? prev + " " + text : text));
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
+
+  const stopListening = () => {
+    recognitionRef.current?.stop();
+    setListening(false);
+  };
+
+  // ── Send transcript to backend AI for parsing ──
+  const handleParse = async () => {
+    if (!transcript.trim()) return setErr("Pehle bolo ya text likho");
+    setParsing(true);
+    setErr("");
+    try {
+      const res = await fetch(`${BACKEND}/api/voice-invoice/parse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Parsing failed");
+
+      if (data.customerName) setCustomerName(data.customerName);
+      if (data.customerEmail) setCustomerEmail(data.customerEmail);
+      if (data.customerPhone) setCustomerPhone(data.customerPhone);
+      if (data.items && data.items.length) setItems(data.items);
+    } catch (e) {
+      setErr("❌ " + e.message);
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  // ── Manual item editing ──
+  const updateItem = (idx, key, value) => {
+    setItems((prev) => prev.map((it, i) => i === idx ? { ...it, [key]: value } : it));
+  };
+  const addItemRow = () => setItems((prev) => [...prev, { name: "", qty: 1, price: 0 }]);
+  const removeItemRow = (idx) => setItems((prev) => prev.filter((_, i) => i !== idx));
+
+  const subtotal = items.reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
+  const tax = Math.round(subtotal * 0.18); // GST 18% — apni requirement ke hisaab se badal sakte ho
+  const total = subtotal + tax;
+
+  // ── Generate PDF ──
+  const handleGeneratePDF = () => {
+    if (!customerName.trim()) return setErr("Customer name zaroori hai");
+    if (items.length === 0 || items.every((it) => !it.name.trim())) return setErr("Kam se kam ek item add karo");
+
+    invoiceCounter += 1;
+    const invoiceId = `INV-${invoiceCounter}`;
+    const date = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+    const doc = new jsPDF();
+
+    // Header
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.text("INVOICE", 14, 20);
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Invoice #: ${invoiceId}`, 14, 30);
+    doc.text(`Date: ${date}`, 14, 36);
+
+    // Customer details
+    doc.setFont("helvetica", "bold");
+    doc.text("Bill To:", 14, 48);
+    doc.setFont("helvetica", "normal");
+    doc.text(customerName, 14, 54);
+    if (customerEmail) doc.text(customerEmail, 14, 60);
+    if (customerPhone) doc.text(customerPhone, 14, customerEmail ? 66 : 60);
+
+    // Items table
+    const tableRows = items
+      .filter((it) => it.name.trim())
+      .map((it) => [
+        it.name,
+        String(it.qty),
+        `Rs. ${Number(it.price).toLocaleString("en-IN")}`,
+        `Rs. ${(Number(it.qty) * Number(it.price)).toLocaleString("en-IN")}`,
+      ]);
+
+    autoTable(doc, {
+      startY: 74,
+      head: [["Item", "Qty", "Price", "Amount"]],
+      body: tableRows,
+      theme: "grid",
+      headStyles: { fillColor: [30, 30, 30] },
+    });
+
+    const finalY = doc.lastAutoTable.finalY + 10;
+    doc.setFont("helvetica", "normal");
+    doc.text(`Subtotal: Rs. ${subtotal.toLocaleString("en-IN")}`, 140, finalY);
+    doc.text(`GST (18%): Rs. ${tax.toLocaleString("en-IN")}`, 140, finalY + 6);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Total: Rs. ${total.toLocaleString("en-IN")}`, 140, finalY + 14);
+
+    doc.save(`${invoiceId}.pdf`);
+    onClose();
+  };
+
+  const inputStyle = {
+    width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
+    border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 12px",
+    fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", outline: "none",
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16,
+      overflowY: "auto",
+    }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16,
+        padding: 24, width: "100%", maxWidth: 560, display: "flex", flexDirection: "column",
+        gap: 16, maxHeight: "90vh", overflowY: "auto",
+      }}>
+        <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 20, color: t.textPrimary, margin: 0 }}>
+          Create Invoice
+        </h3>
+
+        {/* Voice / Text Input Section */}
+        <div style={{
+          background: `${t.accent}08`, border: `1px solid ${t.accent}30`,
+          borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 10,
+        }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
+            Poora bill bolo ya type karo
+          </p>
+          <textarea
+            value={transcript}
+            onChange={(e) => setTranscript(e.target.value)}
+            placeholder='Jaise: "Customer Rahul Sharma, email rahul@gmail.com, 2 kg sugar 50 rupaye kilo, 1 rice bag 400 rupaye"'
+            rows={3}
+            style={{ ...inputStyle, resize: "vertical", fontFamily: "'DM Sans', sans-serif" }}
+          />
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={listening ? stopListening : startListening}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: listening ? t.red : t.accent, color: "#fff", border: "none",
+                borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              {listening ? "⏹ Stop Listening" : "🎤 Speak Bill"}
+            </button>
+            <button
+              onClick={handleParse}
+              disabled={parsing || !transcript.trim()}
+              style={{
+                background: "transparent", color: t.accent, border: `1.5px solid ${t.accent}`,
+                borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600,
+                cursor: parsing || !transcript.trim() ? "not-allowed" : "pointer",
+                opacity: parsing || !transcript.trim() ? 0.5 : 1,
+              }}
+            >
+              {parsing ? "⏳ Parsing..." : "✨ Auto-fill from text"}
+            </button>
+          </div>
+          {listening && <p style={{ fontSize: 11, color: t.accent, margin: 0 }}>🔴 Sun raha hoon... bolo</p>}
+        </div>
+
+        {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>{err}</p>}
+
+        {/* Customer Details */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ fontSize: 11, color: t.textMuted }}>Customer Name *</label>
+            <input style={inputStyle} value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Rahul Sharma" />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: t.textMuted }}>Email</label>
+            <input style={inputStyle} value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="rahul@gmail.com" />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: t.textMuted }}>Phone</label>
+            <input style={inputStyle} value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="+91 XXXXX XXXXX" />
+          </div>
+        </div>
+
+        {/* Items */}
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <label style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Items</label>
+            <button onClick={addItemRow} style={{
+              background: "transparent", color: t.accent, border: "none",
+              fontSize: 12, fontWeight: 600, cursor: "pointer",
+            }}>+ Add Item</button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {items.map((it, idx) => (
+              <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 60px 80px 28px", gap: 6, alignItems: "center" }}>
+                <input
+                  style={inputStyle}
+                  value={it.name}
+                  onChange={(e) => updateItem(idx, "name", e.target.value)}
+                  placeholder="Item name"
+                />
+                <input
+                  type="number"
+                  style={inputStyle}
+                  value={it.qty}
+                  onChange={(e) => updateItem(idx, "qty", e.target.value)}
+                  placeholder="Qty"
+                />
+                <input
+                  type="number"
+                  style={inputStyle}
+                  value={it.price}
+                  onChange={(e) => updateItem(idx, "price", e.target.value)}
+                  placeholder="Price"
+                />
+                <button
+                  onClick={() => removeItemRow(idx)}
+                  style={{ background: "transparent", border: "none", color: t.red, cursor: "pointer", fontSize: 16 }}
+                >×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Totals */}
+        <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 12, display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+          <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>Subtotal: ₹{subtotal.toLocaleString("en-IN")}</p>
+          <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>GST (18%): ₹{tax.toLocaleString("en-IN")}</p>
+          <p style={{ fontSize: 16, fontWeight: 900, color: t.textPrimary, margin: 0, fontFamily: "'Syne', sans-serif" }}>
+            Total: ₹{total.toLocaleString("en-IN")}
+          </p>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{
+            background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
+            borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}>Cancel</button>
+          <button onClick={handleGeneratePDF} style={{
+            background: t.accent, color: "#fff", border: "none", borderRadius: 10,
+            padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}>⬇ Generate & Download PDF</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── ORDERS PAGE ──────────────────────────────────────────────────────────────
 export default function Orders() {
   const { t } = useTheme();
@@ -67,6 +356,7 @@ export default function Orders() {
   const [payment, setPayment]   = useState("All");
   const [sortKey, setSortKey]   = useState("id");
   const [sortDir, setSortDir]   = useState("desc");
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
 
   // Stats
   const totalOrders   = ORDERS.length;
@@ -144,18 +434,26 @@ export default function Orders() {
         }
       `}</style>
 
+      {showInvoiceModal && <CreateInvoiceModal t={t} onClose={() => setShowInvoiceModal(false)} />}
+
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
         {/* Header */}
-        <div>
-          <h1 style={{
-            fontFamily: "'Syne', sans-serif", fontSize: "28px", fontWeight: 900,
-            color: t.textPrimary, letterSpacing: "-0.03em",
-            transition: "color 0.25s ease",
-          }}>Orders</h1>
-          <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>
-            Track, filter, and manage all customer orders
-          </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <h1 style={{
+              fontFamily: "'Syne', sans-serif", fontSize: "28px", fontWeight: 900,
+              color: t.textPrimary, letterSpacing: "-0.03em",
+              transition: "color 0.25s ease",
+            }}>Orders</h1>
+            <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>
+              Track, filter, and manage all customer orders
+            </p>
+          </div>
+          <button onClick={() => setShowInvoiceModal(true)} style={{
+            background: t.accent, color: "#fff", border: "none", borderRadius: 10,
+            padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+          }}>+ Create Invoice</button>
         </div>
 
         {/* Stat Cards */}
