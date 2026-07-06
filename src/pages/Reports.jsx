@@ -30,15 +30,16 @@ function StatCard({ label, value, trend, trendDir, sub }) {
   const bgs = { up: t.greenBg, down: t.redBg, neu: t.orangeBg };
   return (
     <div style={{
-      borderRadius: "16px", padding: "16px", display: "flex", flexDirection: "column", gap: "8px",
+      borderRadius: "16px", padding: "14px", display: "flex", flexDirection: "column", gap: "6px",
       background: t.bgCard, border: `1px solid ${t.border}`,
       transition: "background 0.25s ease, border-color 0.25s ease",
+      minWidth: 0, overflow: "hidden",
     }}>
-      <p style={{ fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: t.textMuted, fontFamily: "'DM Sans', sans-serif", margin: 0 }}>{label}</p>
-      <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(20px, 4vw, 26px)", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", lineHeight: 1, margin: 0 }}>{value}</p>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-        {trend && <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "99px", color: colors[trendDir], background: bgs[trendDir] }}>{trend}</span>}
-        {sub && <span style={{ fontSize: "11px", color: t.textMuted }}>{sub}</span>}
+      <p style={{ fontSize: "9px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: t.textMuted, fontFamily: "'DM Sans', sans-serif", margin: 0 }}>{label}</p>
+      <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(16px, 4vw, 26px)", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", lineHeight: 1, margin: 0, wordBreak: "break-word" }}>{value}</p>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+        {trend && <span style={{ fontSize: "10px", fontWeight: 600, padding: "2px 8px", borderRadius: "99px", color: colors[trendDir], background: bgs[trendDir], whiteSpace: "nowrap" }}>{trend}</span>}
+        {sub && <span style={{ fontSize: "10px", color: t.textMuted, whiteSpace: "nowrap" }}>{sub}</span>}
       </div>
     </div>
   );
@@ -49,13 +50,14 @@ function ChartCard({ title, sub, children, style = {} }) {
   const { t } = useTheme();
   return (
     <div style={{
-      borderRadius: "16px", padding: "16px", display: "flex", flexDirection: "column",
+      borderRadius: "16px", padding: "14px", display: "flex", flexDirection: "column",
       background: t.bgCard, border: `1px solid ${t.border}`,
-      transition: "background 0.25s ease, border-color 0.25s ease", ...style,
+      transition: "background 0.25s ease, border-color 0.25s ease",
+      minWidth: 0, overflow: "hidden", ...style,
     }}>
-      <div style={{ marginBottom: "14px" }}>
-        <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "14px", color: t.textPrimary, margin: 0 }}>{title}</h3>
-        {sub && <p style={{ fontSize: "11px", color: t.textMuted, marginTop: "2px", marginBottom: 0 }}>{sub}</p>}
+      <div style={{ marginBottom: "12px" }}>
+        <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.textPrimary, margin: 0 }}>{title}</h3>
+        {sub && <p style={{ fontSize: "10px", color: t.textMuted, marginTop: "2px", marginBottom: 0 }}>{sub}</p>}
       </div>
       {children}
     </div>
@@ -115,7 +117,7 @@ function AiChat({ t }) {
     }}>
       {/* Header */}
       <div onClick={() => setExpanded((v) => !v)} style={{
-        padding: "14px 16px",
+        padding: "12px 14px",
         borderBottom: expanded ? `1px solid ${t.border}` : "none",
         display: "flex", alignItems: "center", gap: "10px", flexShrink: 0,
         cursor: "pointer", userSelect: "none",
@@ -126,14 +128,14 @@ function AiChat({ t }) {
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: "14px", flexShrink: 0,
         }}>✦</div>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.textPrimary, lineHeight: 1.2, margin: 0 }}>Reports Analyst</p>
           <p style={{ fontSize: "10px", color: t.green, fontWeight: 600, margin: 0 }}>● Live Data</p>
         </div>
         <span style={{
           fontSize: 12, color: t.textMuted,
           transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
-          transition: "transform 0.2s", display: "inline-block",
+          transition: "transform 0.2s", display: "inline-block", flexShrink: 0,
         }}>▼</span>
       </div>
 
@@ -141,13 +143,13 @@ function AiChat({ t }) {
         <>
           {/* Messages */}
           <div style={{
-            flex: 1, overflowY: "auto", padding: "14px",
-            display: "flex", flexDirection: "column", gap: "10px", maxHeight: 360,
+            flex: 1, overflowY: "auto", padding: "12px",
+            display: "flex", flexDirection: "column", gap: "10px", maxHeight: 300,
           }}>
             {messages.map((msg, i) => (
               <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
                 <div style={{
-                  maxWidth: "88%", padding: "9px 13px",
+                  maxWidth: "90%", padding: "9px 13px",
                   borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
                   background: msg.role === "user" ? t.accent : `${t.accent}12`,
                   color: msg.role === "user" ? "#fff" : t.textPrimary,
@@ -206,6 +208,7 @@ function AiChat({ t }) {
                 border: `1px solid ${t.border}`, borderRadius: "10px",
                 padding: "8px 12px", fontSize: "12px", color: t.textPrimary,
                 fontFamily: "'DM Sans', sans-serif", outline: "none", lineHeight: 1.5,
+                minWidth: 0,
               }}
             />
             <button
@@ -257,16 +260,17 @@ function ExportButton({ t }) {
   };
   return (
     <button
+      className="rpt-export-btn"
       onClick={handleExport}
       disabled={exporting}
       style={{
-        display: "inline-flex", alignItems: "center", gap: "7px",
+        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "7px",
         padding: "9px 18px", borderRadius: "10px",
         background: exporting ? `${t.accent}60` : t.accent,
         color: "#fff", fontFamily: "'DM Sans', sans-serif",
         fontWeight: 700, fontSize: "13px",
         border: "none", cursor: exporting ? "not-allowed" : "pointer",
-        transition: "opacity 0.2s", flexShrink: 0,
+        transition: "opacity 0.2s", flexShrink: 0, whiteSpace: "nowrap",
       }}
       onMouseEnter={(e) => { if (!exporting) e.currentTarget.style.opacity = "0.85"; }}
       onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
@@ -285,18 +289,21 @@ export default function Reports() {
 
   useEffect(() => {
     fetch(`${BACKEND}/api/reports`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("Reports endpoint not found");
+        return r.json();
+      })
       .then((d) => { setReport(d); setLoading(false); })
       .catch(() => { setFetchError(true); setLoading(false); });
   }, []);
 
-  // ── Chart data from live report ──
-  const months = report ? Object.keys(report.revenueByMonth) : [];
-  const revenueVals = report ? Object.values(report.revenueByMonth) : [];
-  const orderMonths = report ? Object.keys(report.ordersByMonth) : [];
-  const orderVals = report ? Object.values(report.ordersByMonth) : [];
-  const catLabels = report ? Object.keys(report.revenueByCategory) : [];
-  const catVals = report ? Object.values(report.revenueByCategory) : [];
+  // ── Chart data from live report (safe against missing keys) ──
+  const months = report?.revenueByMonth ? Object.keys(report.revenueByMonth) : [];
+  const revenueVals = report?.revenueByMonth ? Object.values(report.revenueByMonth) : [];
+  const orderMonths = report?.ordersByMonth ? Object.keys(report.ordersByMonth) : [];
+  const orderVals = report?.ordersByMonth ? Object.values(report.ordersByMonth) : [];
+  const catLabels = report?.revenueByCategory ? Object.keys(report.revenueByCategory) : [];
+  const catVals = report?.revenueByCategory ? Object.values(report.revenueByCategory) : [];
 
   const tooltipBase = {
     backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1,
@@ -306,48 +313,77 @@ export default function Reports() {
   return (
     <>
       <style>{`
+        .rpt-page { min-width: 0; overflow: hidden; }
+
+        .rpt-header {
+          display: flex; align-items: flex-start; justify-content: space-between;
+          flex-wrap: wrap; gap: 12px;
+        }
+
         .rpt-stat-grid {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 12px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
         }
+
         .rpt-main-layout {
           display: grid;
-          grid-template-columns: 1fr 300px;
-          gap: 16px;
+          grid-template-columns: minmax(0, 1fr);
+          gap: 12px;
           align-items: start;
         }
-        .rpt-charts-col { display: flex; flex-direction: column; gap: 16px; }
-        .rpt-row-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-        .rpt-ai-sticky { position: sticky; top: 88px; }
 
-        @media (max-width: 900px) {
-          .rpt-main-layout { grid-template-columns: 1fr; }
-          .rpt-ai-sticky { position: static; }
+        .rpt-charts-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+        .rpt-row-2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+        .rpt-ai-sticky { position: static; }
+
+        .rpt-chart-h-lg { height: 160px; }
+        .rpt-chart-h-md { height: 160px; }
+        .rpt-chart-h-donut { height: 180px; }
+
+        .rpt-export-btn { width: 100%; }
+
+        .rpt-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+        /* ── Tablet (700px+) ── */
+        @media (min-width: 700px) {
+          .rpt-stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+          .rpt-row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+          .rpt-chart-h-lg { height: 180px; }
+          .rpt-chart-h-md { height: 180px; }
+          .rpt-chart-h-donut { height: 200px; }
+          .rpt-export-btn { width: auto; }
         }
-        @media (max-width: 640px) {
-          .rpt-stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-          .rpt-row-2 { grid-template-columns: 1fr; gap: 12px; }
-          .rpt-main-layout { gap: 12px; }
+
+        /* ── Desktop (1024px+) ── */
+        @media (min-width: 1024px) {
+          .rpt-main-layout { grid-template-columns: 1fr 300px; gap: 16px; }
+          .rpt-ai-sticky { position: sticky; top: 88px; }
         }
-        @media (max-width: 360px) {
-          .rpt-stat-grid { grid-template-columns: 1fr 1fr; }
+
+        /* ── Tiny screens ── */
+        @media (max-width: 359px) {
+          .rpt-stat-grid { gap: 6px; }
+          .rpt-row-2 { gap: 8px; }
+          .rpt-chart-h-lg { height: 140px; }
+          .rpt-chart-h-md { height: 140px; }
+          .rpt-chart-h-donut { height: 160px; }
         }
       `}</style>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+      <div className="rpt-page" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
 
         {/* ── Header ── */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
-          <div>
+        <div className="rpt-header">
+          <div style={{ minWidth: 0 }}>
             <h1 style={{
               fontFamily: "'Syne', sans-serif",
-              fontSize: "clamp(22px, 5vw, 28px)",
+              fontSize: "clamp(20px, 6vw, 28px)",
               fontWeight: 900, color: t.textPrimary,
               letterSpacing: "-0.03em",
               transition: "color 0.25s ease", margin: 0,
             }}>Reports</h1>
-            <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
+            <p style={{ fontSize: "12px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
               Live business performance — export GST report for your CA
             </p>
           </div>
@@ -357,19 +393,19 @@ export default function Reports() {
         {/* ── Loading / Error states ── */}
         {loading && (
           <div style={{
-            padding: "40px", textAlign: "center",
+            padding: "32px 16px", textAlign: "center",
             borderRadius: "16px", background: t.bgCard, border: `1px solid ${t.border}`,
           }}>
-            <p style={{ color: t.textMuted, fontSize: "14px", margin: 0 }}>⏳ Loading report data...</p>
+            <p style={{ color: t.textMuted, fontSize: "13px", margin: 0 }}>⏳ Loading report data...</p>
           </div>
         )}
 
         {!loading && fetchError && (
           <div style={{
-            padding: "20px", borderRadius: "16px",
+            padding: "16px", borderRadius: "16px",
             background: t.redBg, border: `1px solid ${t.red}40`,
           }}>
-            <p style={{ color: t.red, fontSize: "13px", margin: 0, fontWeight: 600 }}>
+            <p style={{ color: t.red, fontSize: "12px", margin: 0, fontWeight: 600 }}>
               ❌ Failed to load report. Please check your backend connection.
             </p>
           </div>
@@ -417,7 +453,7 @@ export default function Reports() {
 
                 {/* Revenue Line Chart */}
                 <ChartCard title="Revenue Trend" sub="Monthly from live DB">
-                  <div style={{ height: 180 }}>
+                  <div className="rpt-chart-h-lg">
                     <Line
                       data={{
                         labels: months,
@@ -425,7 +461,7 @@ export default function Reports() {
                           label: "Revenue", data: revenueVals,
                           borderColor: t.accent, borderWidth: 2.5,
                           backgroundColor: `${t.accent}18`,
-                          pointRadius: 4, pointBackgroundColor: t.accent,
+                          pointRadius: 3, pointBackgroundColor: t.accent,
                           pointBorderColor: t.bgCard, pointBorderWidth: 2,
                           tension: 0.4, fill: true,
                         }],
@@ -437,8 +473,8 @@ export default function Reports() {
                           tooltip: { ...tooltipBase, callbacks: { label: (ctx) => " ₹" + ctx.raw.toLocaleString("en-IN") } },
                         },
                         scales: {
-                          x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 10 } } },
-                          y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 10 }, callback: (v) => "₹" + v / 1000 + "k" } },
+                          x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 9 } } },
+                          y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 9 }, callback: (v) => "₹" + v / 1000 + "k" } },
                         },
                       }}
                     />
@@ -448,7 +484,7 @@ export default function Reports() {
                 {/* Orders Bar + Category Donut */}
                 <div className="rpt-row-2">
                   <ChartCard title="Monthly Orders" sub="From live DB">
-                    <div style={{ height: 180 }}>
+                    <div className="rpt-chart-h-md">
                       <Bar
                         data={{
                           labels: orderMonths,
@@ -462,8 +498,8 @@ export default function Reports() {
                           responsive: true, maintainAspectRatio: false,
                           plugins: { legend: { display: false }, tooltip: tooltipBase },
                           scales: {
-                            x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 10 } } },
-                            y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 10 } } },
+                            x: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 9 } } },
+                            y: { grid: { color: t.gridColor }, ticks: { color: t.textMuted, font: { size: 9 } } },
                           },
                         }}
                       />
@@ -471,7 +507,7 @@ export default function Reports() {
                   </ChartCard>
 
                   <ChartCard title="Revenue by Category" sub="From live DB">
-                    <div style={{ height: 200 }}>
+                    <div className="rpt-chart-h-donut">
                       <Doughnut
                         data={{
                           labels: catLabels,
@@ -484,7 +520,7 @@ export default function Reports() {
                         options={{
                           responsive: true, maintainAspectRatio: false, cutout: "68%",
                           plugins: {
-                            legend: { position: "bottom", labels: { color: t.textMuted, font: { size: 11 }, padding: 12, boxWidth: 10 } },
+                            legend: { position: "bottom", labels: { color: t.textMuted, font: { size: 10 }, padding: 10, boxWidth: 8 } },
                             tooltip: { ...tooltipBase, callbacks: { label: (ctx) => " ₹" + ctx.raw.toLocaleString("en-IN") } },
                           },
                         }}
@@ -499,22 +535,22 @@ export default function Reports() {
                     <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                       {report.stock.outOfStock.map((p) => (
                         <div key={p.name} style={{
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
                           padding: "8px 12px", borderRadius: "10px",
                           background: t.redBg, border: `1px solid ${t.red}30`,
                         }}>
-                          <span style={{ fontSize: "13px", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>{p.name}</span>
-                          <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 10px", borderRadius: "99px", color: t.red, background: `${t.red}20` }}>Out of Stock</span>
+                          <span style={{ fontSize: "12px", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                          <span style={{ fontSize: "9px", fontWeight: 700, padding: "2px 8px", borderRadius: "99px", color: t.red, background: `${t.red}20`, whiteSpace: "nowrap", flexShrink: 0 }}>Out of Stock</span>
                         </div>
                       ))}
                       {report.stock.lowStock.map((p) => (
                         <div key={p.name} style={{
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
                           padding: "8px 12px", borderRadius: "10px",
                           background: t.orangeBg, border: `1px solid ${t.orange}30`,
                         }}>
-                          <span style={{ fontSize: "13px", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>{p.name}</span>
-                          <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 10px", borderRadius: "99px", color: t.orange, background: `${t.orange}20` }}>{p.stock} units left</span>
+                          <span style={{ fontSize: "12px", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                          <span style={{ fontSize: "9px", fontWeight: 700, padding: "2px 8px", borderRadius: "99px", color: t.orange, background: `${t.orange}20`, whiteSpace: "nowrap", flexShrink: 0 }}>{p.stock} units left</span>
                         </div>
                       ))}
                     </div>
@@ -523,15 +559,15 @@ export default function Reports() {
 
                 {/* Top Products Table */}
                 <ChartCard title="Top Products" sub="By revenue from live DB">
-                  <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                    <table style={{ width: "100%", minWidth: 320, borderCollapse: "collapse", fontSize: "12px" }}>
+                  <div className="rpt-table-wrap">
+                    <table style={{ width: "100%", minWidth: 320, borderCollapse: "collapse", fontSize: "11px" }}>
                       <thead>
                         <tr style={{ borderBottom: `1px solid ${t.border}` }}>
                           {["#", "Product", "Revenue", "Orders", "Growth", "Category"].map((h) => (
                             <th key={h} style={{
-                              textAlign: "left", paddingBottom: "8px", fontSize: "10px", fontWeight: 600,
+                              textAlign: "left", paddingBottom: "8px", fontSize: "9px", fontWeight: 600,
                               textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted,
-                              fontFamily: "'DM Sans', sans-serif", paddingRight: "12px", whiteSpace: "nowrap",
+                              fontFamily: "'DM Sans', sans-serif", paddingRight: "10px", whiteSpace: "nowrap",
                             }}>{h}</th>
                           ))}
                         </tr>
@@ -539,14 +575,14 @@ export default function Reports() {
                       <tbody>
                         {report.topProducts.map((p, i) => (
                           <tr key={p.name} style={{ borderBottom: i < report.topProducts.length - 1 ? `1px solid ${t.border}` : "none" }}>
-                            <td style={{ padding: "8px 12px 8px 0", fontSize: "11px", color: t.textMuted, fontWeight: 600 }}>{i + 1}</td>
-                            <td style={{ padding: "8px 12px 8px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>{p.name}</td>
-                            <td style={{ padding: "8px 12px 8px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>₹{p.revenue.toLocaleString("en-IN")}</td>
-                            <td style={{ padding: "8px 12px 8px 0", fontSize: "11px", color: t.textMuted }}>{p.orders}</td>
-                            <td style={{ padding: "8px 12px 8px 0" }}>
-                              <span style={{ fontSize: "10px", fontWeight: 600, padding: "3px 8px", borderRadius: "99px", color: t.green, background: t.greenBg, whiteSpace: "nowrap" }}>+{p.growth}%</span>
+                            <td style={{ padding: "8px 10px 8px 0", fontSize: "10px", color: t.textMuted, fontWeight: 600 }}>{i + 1}</td>
+                            <td style={{ padding: "8px 10px 8px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>{p.name}</td>
+                            <td style={{ padding: "8px 10px 8px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>₹{p.revenue.toLocaleString("en-IN")}</td>
+                            <td style={{ padding: "8px 10px 8px 0", fontSize: "10px", color: t.textMuted }}>{p.orders}</td>
+                            <td style={{ padding: "8px 10px 8px 0" }}>
+                              <span style={{ fontSize: "9px", fontWeight: 600, padding: "2px 7px", borderRadius: "99px", color: t.green, background: t.greenBg, whiteSpace: "nowrap" }}>+{p.growth}%</span>
                             </td>
-                            <td style={{ padding: "8px 0", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>{p.category}</td>
+                            <td style={{ padding: "8px 0", fontSize: "10px", color: t.textMuted, whiteSpace: "nowrap" }}>{p.category}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -556,7 +592,7 @@ export default function Reports() {
 
                 {/* Order Fulfillment Summary */}
                 <ChartCard title="Order Fulfillment" sub="Status breakdown">
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "10px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px" }}>
                     {[
                       { label: "Delivered", value: report.summary.delivered, color: t.green, bg: t.greenBg },
                       { label: "Pending", value: report.summary.pending, color: t.orange, bg: t.orangeBg },
@@ -564,12 +600,13 @@ export default function Reports() {
                       { label: "Cancelled", value: report.summary.cancelled, color: t.red, bg: t.redBg },
                     ].map(({ label, value, color, bg }) => (
                       <div key={label} style={{
-                        padding: "12px", borderRadius: "12px",
-                        background: bg, display: "flex", flexDirection: "column", gap: "4px",
+                        padding: "10px", borderRadius: "12px",
+                        background: bg, display: "flex", flexDirection: "column", gap: "3px",
+                        minWidth: 0, overflow: "hidden",
                       }}>
-                        <p style={{ fontSize: "10px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>{label}</p>
-                        <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "22px", fontWeight: 900, color, margin: 0 }}>{value}</p>
-                        <p style={{ fontSize: "10px", color, margin: 0, opacity: 0.8 }}>
+                        <p style={{ fontSize: "9px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>{label}</p>
+                        <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "20px", fontWeight: 900, color, margin: 0 }}>{value}</p>
+                        <p style={{ fontSize: "9px", color, margin: 0, opacity: 0.8 }}>
                           {report.summary.total ? ((value / report.summary.total) * 100).toFixed(1) : 0}% of total
                         </p>
                       </div>

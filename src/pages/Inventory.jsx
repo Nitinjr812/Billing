@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
+import VoiceAddProduct from "../components/VoiceAddProduct";
 
 const BACKEND = "https://billing-backend-tawny.vercel.app";
 const CATEGORIES = ["Electronics", "Apparel", "Home Goods"];
@@ -44,7 +45,7 @@ function AddProductModal({ onClose, onAdded, t }) {
   const handleSubmit = async () => {
     setErr("");
     if (!form.productId || !form.name || !form.stock || !form.price) {
-      return setErr("Product ID, Name, Stock aur Price zaroori hai");
+      return setErr("Product ID, Name, Stock and Price is mandatory");
     }
     setSaving(true);
     try {
@@ -231,6 +232,7 @@ export default function Inventory() {
             <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "28px", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em" }}>Inventory</h1>
             <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>Manage your product stock, SKUs, and availability</p>
           </div>
+          <VoiceAddProduct onProductAdded={loadProducts} />
           <button onClick={() => setShowAdd(true)} style={{
             background: t.accent, color: "#fff", border: "none", borderRadius: 10,
             padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
