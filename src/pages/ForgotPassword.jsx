@@ -2,46 +2,50 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../components/ThemeContext";
+import { inputStyle, buttonStyle } from "./Login";
 
-export default function Login() {
-  const { login, verifyLoginOtp, resendOtp } = useAuth();
+export default function ForgotPassword() {
+  const { forgotPassword, resetPassword } = useAuth();
   const { t } = useTheme();
   const navigate = useNavigate();
 
-  const [step, setStep] = useState("password"); // "password" | "otp"
+  const [step, setStep] = useState("email"); // "email" | "reset"
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handlePasswordSubmit = async (e) => {
+  const handleRequestOtp = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await login(email, password);
-      setStep("otp");
+      await forgotPassword(email);
+      setStep("reset");
       setInfo("OTP sent to your email");
     } catch (err) {
-      if (err.needsSignupVerification) {
-        setError("Account is not verified. Please verify your signup OTP.");
-      } else {
-        setError(err.message);
-      }
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleOtpSubmit = async (e) => {
+  const handleReset = async (e) => {
     e.preventDefault();
     setError("");
+
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
     setLoading(true);
     try {
-      await verifyLoginOtp(email, otp);
-      navigate("/dashboard");
+      await resetPassword(email, otp, newPassword);
+      navigate("/login");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -52,7 +56,7 @@ export default function Login() {
   const handleResend = async () => {
     setError("");
     try {
-      await resendOtp(email);
+      await forgotPassword(email);
       setInfo("OTP resent");
     } catch (err) {
       setError(err.message);
@@ -62,16 +66,16 @@ export default function Login() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: t.bgPage, padding: "20px" }}>
       <div style={{ width: "100%", maxWidth: 380, background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: "16px", padding: "32px" }}>
-        {step === "password" ? (
+        {step === "email" ? (
           <>
             <h1 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "24px", color: t.textPrimary, marginBottom: "4px" }}>
-              Welcome back
+              Forgot password
             </h1>
             <p style={{ fontSize: "13px", color: t.textMuted, marginBottom: "24px" }}>
-              Login to your shop dashboard
+              Enter your email to receive a reset code
             </p>
 
-            <form onSubmit={handlePasswordSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <form onSubmit={handleRequestOtp} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <input
                 type="email"
                 placeholder="Email"
@@ -80,42 +84,28 @@ export default function Login() {
                 required
                 style={inputStyle(t)}
               />
-              <input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                style={inputStyle(t)}
-              />
-
-              <div style={{ textAlign: "right" }}>
-                <Link to="/forgot-password" style={{ fontSize: "12px", color: t.accent, fontWeight: 600, textDecoration: "none" }}>
-                  Forgot password?
-                </Link>
-              </div>
 
               {error && <p style={{ color: t.red, fontSize: "12px", margin: 0 }}>{error}</p>}
 
               <button type="submit" disabled={loading} style={buttonStyle(t, loading)}>
-                {loading ? "Checking..." : "Continue"}
+                {loading ? "Sending..." : "Send OTP"}
               </button>
             </form>
 
             <p style={{ fontSize: "12px", color: t.textMuted, marginTop: "20px", textAlign: "center" }}>
-              Don't have an account? <Link to="/signup" style={{ color: t.accent, fontWeight: 600 }}>Sign up</Link>
+              Remembered your password? <Link to="/login" style={{ color: t.accent, fontWeight: 600 }}>Login</Link>
             </p>
           </>
         ) : (
           <>
             <h1 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "24px", color: t.textPrimary, marginBottom: "4px" }}>
-              Enter OTP
+              Reset password
             </h1>
             <p style={{ fontSize: "13px", color: t.textMuted, marginBottom: "24px" }}>
-              Enter the code sent to {email}
+              Enter the OTP sent to {email} and set a new password
             </p>
 
-            <form onSubmit={handleOtpSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <form onSubmit={handleReset} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <input
                 type="text"
                 placeholder="6-digit OTP"
@@ -125,12 +115,28 @@ export default function Login() {
                 required
                 style={{ ...inputStyle(t), textAlign: "center", letterSpacing: "6px", fontSize: "18px" }}
               />
+              <input
+                type="password"
+                placeholder="New password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                style={inputStyle(t)}
+              />
+              <input
+                type="password"
+                placeholder="Confirm new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                style={inputStyle(t)}
+              />
 
               {info && !error && <p style={{ color: t.accent, fontSize: "12px", margin: 0 }}>{info}</p>}
               {error && <p style={{ color: t.red, fontSize: "12px", margin: 0 }}>{error}</p>}
 
               <button type="submit" disabled={loading} style={buttonStyle(t, loading)}>
-                {loading ? "Verifying..." : "Verify & Login"}
+                {loading ? "Resetting..." : "Reset Password"}
               </button>
             </form>
 
@@ -148,21 +154,4 @@ export default function Login() {
       </div>
     </div>
   );
-}
-
-export function inputStyle(t) {
-  return {
-    padding: "10px 14px", borderRadius: "10px", border: `1px solid ${t.border}`,
-    background: t.bgPage, color: t.textPrimary, fontSize: "13px", outline: "none",
-    fontFamily: "'DM Sans', sans-serif",
-  };
-}
-
-export function buttonStyle(t, loading) {
-  return {
-    padding: "11px", borderRadius: "10px", border: "none",
-    background: loading ? `${t.accent}80` : t.accent, color: "#fff",
-    fontWeight: 700, fontSize: "13px", cursor: loading ? "not-allowed" : "pointer",
-    fontFamily: "'DM Sans', sans-serif", marginTop: "6px",
-  };
 }

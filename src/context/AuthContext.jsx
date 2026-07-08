@@ -8,7 +8,6 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // App load hote hi saved session restore karo
   useEffect(() => {
     const savedToken = localStorage.getItem("token");
     const savedUser = localStorage.getItem("user");
@@ -19,6 +18,13 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
+  const setSession = (data) => {
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("user", JSON.stringify(data.user));
+    setToken(data.token);
+    setUser(data.user);
+  };
+
   const login = async (email, password) => {
     const res = await fetch(`${BACKEND}/api/auth/login`, {
       method: "POST",
@@ -26,12 +32,24 @@ export function AuthProvider({ children }) {
       body: JSON.stringify({ email, password }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Login failed");
+    if (!res.ok) {
+      const err = new Error(data.error || "Login failed");
+      err.needsSignupVerification = data.needsSignupVerification;
+      err.email = data.email;
+      throw err;
+    }
+    return data;
+  };
 
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("user", JSON.stringify(data.user));
-    setToken(data.token);
-    setUser(data.user);
+  const verifyLoginOtp = async (email, otp) => {
+    const res = await fetch(`${BACKEND}/api/auth/verify-login-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, otp }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "OTP verification failed");
+    setSession(data);
     return data;
   };
 
@@ -43,12 +61,7 @@ export function AuthProvider({ children }) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Signup failed");
-
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("user", JSON.stringify(data.user));
-    setToken(data.token);
-    setUser(data.user);
-    return data; // data.shopId — isse owner ko dikhana hai
+    return data;
   };
 
   const signupStaff = async ({ name, email, password, shopId }) => {
@@ -59,11 +72,52 @@ export function AuthProvider({ children }) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Signup failed");
+    return data;
+  };
 
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("user", JSON.stringify(data.user));
-    setToken(data.token);
-    setUser(data.user);
+  const verifySignupOtp = async (email, otp) => {
+    const res = await fetch(`${BACKEND}/api/auth/verify-signup-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, otp }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Verification failed");
+    setSession(data);
+    return data;
+  };
+
+  const resendOtp = async (email) => {
+    const res = await fetch(`${BACKEND}/api/auth/resend-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Resend failed");
+    return data;
+  };
+
+  // ── FORGOT PASSWORD ──────────────────────────────────────────────────
+  const forgotPassword = async (email) => {
+    const res = await fetch(`${BACKEND}/api/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Request failed");
+    return data;
+  };
+
+  const resetPassword = async (email, otp, newPassword) => {
+    const res = await fetch(`${BACKEND}/api/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, otp, newPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Reset failed");
     return data;
   };
 
@@ -75,7 +129,15 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, signupOwner, signupStaff, logout }}>
+    <AuthContext.Provider
+      value={{
+        user, token, loading,
+        login, verifyLoginOtp,
+        signupOwner, signupStaff, verifySignupOtp,
+        resendOtp, forgotPassword, resetPassword,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

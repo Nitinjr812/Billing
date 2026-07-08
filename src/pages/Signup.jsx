@@ -5,15 +5,20 @@ import { useTheme } from "../components/ThemeContext";
 import { inputStyle, buttonStyle } from "./Login";
 
 export default function Signup() {
-  const { signupOwner, signupStaff } = useAuth();
+  const { signupOwner, signupStaff, verifySignupOtp, resendOtp } = useAuth();
   const { t } = useTheme();
   const navigate = useNavigate();
 
   const [tab, setTab] = useState("owner"); // "owner" | "staff"
   const [form, setForm] = useState({ name: "", email: "", password: "", shopName: "", shopId: "" });
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
-  const [ownerShopId, setOwnerShopId] = useState(""); // signup ke baad dikhane ke liye
+
+  const [step, setStep] = useState("form"); // "form" | "otp"
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [pendingShopId, setPendingShopId] = useState(""); // owner ka shopId, verify ke baad dikhane ke liye
+  const [otp, setOtp] = useState("");
 
   const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -26,13 +31,16 @@ export default function Signup() {
         const data = await signupOwner({
           name: form.name, email: form.email, password: form.password, shopName: form.shopName,
         });
-        setOwnerShopId(data.shopId); // pehle Shop ID dikhao, phir navigate
+        setPendingShopId(data.shopId);
+        setPendingEmail(data.email);
       } else {
-        await signupStaff({
+        const data = await signupStaff({
           name: form.name, email: form.email, password: form.password, shopId: form.shopId,
         });
-        navigate("/dashboard");
+        setPendingEmail(data.email);
       }
+      setStep("otp");
+      setInfo("OTP email pe bheja gaya hai");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -40,25 +48,80 @@ export default function Signup() {
     }
   };
 
-  // ── Owner signup ke baad Shop ID dikhane wala screen ──
-  if (ownerShopId) {
+  const handleOtpSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      await verifySignupOtp(pendingEmail, otp);
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setError("");
+    try {
+      await resendOtp(pendingEmail);
+      setInfo("OTP dobara bheja gaya");
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  // ── OTP verification screen (owner + staff dono ke liye common) ──
+  if (step === "otp") {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: t.bgPage, padding: "20px" }}>
-        <div style={{ width: "100%", maxWidth: 380, background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: "16px", padding: "32px", textAlign: "center" }}>
-          <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, color: t.textPrimary }}>🎉 Shop Created!</h2>
-          <p style={{ fontSize: "13px", color: t.textMuted, margin: "12px 0" }}>
-            Apna Shop ID staff members ke saath share karo taaki wo join kar sakein:
+        <div style={{ width: "100%", maxWidth: 380, background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: "16px", padding: "32px" }}>
+          <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "22px", color: t.textPrimary, marginBottom: "4px" }}>
+            Verify your email
+          </h2>
+          <p style={{ fontSize: "13px", color: t.textMuted, marginBottom: "20px" }}>
+            {pendingEmail} pe bheja gaya OTP daalo
           </p>
-          <div style={{
-            background: t.bgPage, border: `1px dashed ${t.accent}`, borderRadius: "10px",
-            padding: "14px", fontFamily: "monospace", fontSize: "16px", fontWeight: 700,
-            color: t.accent, marginBottom: "20px", wordBreak: "break-all",
-          }}>
-            {ownerShopId}
-          </div>
-          <button onClick={() => navigate("/dashboard")} style={buttonStyle(t, false)}>
-            Go to Dashboard
-          </button>
+
+          {pendingShopId && (
+            <div style={{
+              background: t.bgPage, border: `1px dashed ${t.accent}`, borderRadius: "10px",
+              padding: "12px", fontFamily: "monospace", fontSize: "14px", fontWeight: 700,
+              color: t.accent, marginBottom: "16px", wordBreak: "break-all", textAlign: "center",
+            }}>
+              Shop ID: {pendingShopId}
+            </div>
+          )}
+
+          <form onSubmit={handleOtpSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <input
+              type="text"
+              placeholder="6-digit OTP"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              maxLength={6}
+              required
+              style={{ ...inputStyle(t), textAlign: "center", letterSpacing: "6px", fontSize: "18px" }}
+            />
+
+            {info && !error && <p style={{ color: t.accent, fontSize: "12px", margin: 0 }}>{info}</p>}
+            {error && <p style={{ color: t.red, fontSize: "12px", margin: 0 }}>{error}</p>}
+
+            <button type="submit" disabled={loading} style={buttonStyle(t, loading)}>
+              {loading ? "Verifying..." : "Verify & Continue"}
+            </button>
+          </form>
+
+          <p style={{ fontSize: "12px", color: t.textMuted, marginTop: "16px", textAlign: "center" }}>
+            OTP nahi mila?{" "}
+            <button
+              onClick={handleResend}
+              style={{ background: "none", border: "none", color: t.accent, fontWeight: 600, cursor: "pointer", fontSize: "12px", padding: 0 }}
+            >
+              Resend
+            </button>
+          </p>
         </div>
       </div>
     );

@@ -16,7 +16,8 @@ import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import Notifications from "./pages/Notifications";
 import Suppliers from "./pages/Supliers";
-
+import ForgotPassword from "./pages/ForgotPassword";
+import VerifyEmail from "./pages/VerifyEmail";
 // ─── PROTECTED ROUTE WRAPPER ──────────────────────────────────────────────
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -51,18 +52,20 @@ function AppInner() {
             <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
             <main className="pt-20 px-4 md:px-8 pb-10 max-w-7xl mx-auto">
               <Routes>
-                <Route path="/"              element={<Navigate to="/dashboard" replace />} />
-                <Route path="/dashboard"     element={<Dashboard />} />
-                <Route path="/subscription"  element={<Subscription />} />
-                <Route path="/inventory"     element={<Inventory />} />
-                <Route path="/orders"        element={<Orders />} />
-                <Route path="/customers"     element={<Customers />} />
-                <Route path="/stocks"        element={<Stocks />} />
-                <Route path="/reports"       element={<Reports />} />
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/subscription" element={<Subscription />} />
+                <Route path="/inventory" element={<Inventory />} />
+                <Route path="/orders" element={<Orders />} />
+                <Route path="/customers" element={<Customers />} />
+                <Route path="/stocks" element={<Stocks />} />
+                <Route path="/reports" element={<Reports />} />
                 <Route path="/notifications" element={<Notifications />} />
-                <Route path="/settings"      element={<Settings />} />
-                <Route path="/suppliers"     element={<Suppliers />} />
-                <Route path="*"              element={<Navigate to="/dashboard" replace />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/suppliers" element={<Suppliers />} />
+                <Route path="/verify-email/:token" element={<VerifyEmail />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Routes>
             </main>
           </div>

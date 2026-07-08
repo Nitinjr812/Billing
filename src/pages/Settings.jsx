@@ -171,15 +171,15 @@ function PrimaryBtn({ children, onClick, danger, small, disabled }) {
   );
 }
 
-function GhostBtn({ children, onClick, small, disabled }) {
+function GhostBtn({ children, onClick, small, disabled, danger }) {
   const { t } = useTheme();
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       style={{
-        background: "transparent", color: t.textMuted,
-        border: `1px solid ${t.border}`, borderRadius: 10,
+        background: "transparent", color: danger ? t.red : t.textMuted,
+        border: `1px solid ${danger ? t.red : t.border}`, borderRadius: 10,
         padding: small ? "6px 14px" : "9px 18px",
         fontSize: small ? 11 : 13, fontWeight: 600,
         fontFamily: "'DM Sans', sans-serif", cursor: disabled ? "not-allowed" : "pointer",
@@ -501,9 +501,12 @@ function BillingSection() {
 function SecuritySection() {
   const { t } = useTheme();
   const api = useApi();
+  const { logout } = useAuth();
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState("");
 
   const handleChangePassword = async () => {
     setMsg("");
@@ -523,6 +526,34 @@ function SecuritySection() {
     }
   };
 
+  const handleLogout = () => {
+    if (!window.confirm("Are you sure you want to log out?")) return;
+    logout();
+  };
+
+  const handleDeleteAccount = async () => {
+    const sure = window.confirm(
+      "Are you sure you want to delete your account? This action is permanent and cannot be undone."
+    );
+    if (!sure) return;
+
+    const confirmText = window.prompt('Type "DELETE" to confirm account deletion');
+    if (confirmText !== "DELETE") {
+      if (confirmText !== null) alert("Confirmation text didn't match. Account not deleted.");
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteMsg("");
+    try {
+      await api("/settings/account", { method: "DELETE" });
+      logout();
+    } catch (e) {
+      setDeleteMsg("❌ " + e.message);
+      setDeleting(false);
+    }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <SectionTitle sub="Keep your account safe and secure">Security</SectionTitle>
@@ -538,6 +569,32 @@ function SecuritySection() {
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
           <PrimaryBtn onClick={handleChangePassword} disabled={saving}>{saving ? "Updating..." : "Update Password"}</PrimaryBtn>
         </div>
+      </Card>
+
+      {/* Session */}
+      <Card style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>Log out</p>
+          <p style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>Sign out of your account on this device</p>
+        </div>
+        <GhostBtn onClick={handleLogout}>Logout</GhostBtn>
+      </Card>
+
+      {/* Danger Zone */}
+      <Card style={{ border: `1px solid ${t.red}40` }}>
+        <Label>Danger Zone</Label>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 8 }}>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>Delete Account</p>
+            <p style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
+              Permanently delete your account and all associated data. This cannot be undone.
+            </p>
+          </div>
+          <PrimaryBtn danger onClick={handleDeleteAccount} disabled={deleting}>
+            {deleting ? "Deleting..." : "Delete Account"}
+          </PrimaryBtn>
+        </div>
+        {deleteMsg && <p style={{ fontSize: 12, marginTop: 10, color: t.red }}>{deleteMsg}</p>}
       </Card>
     </div>
   );
