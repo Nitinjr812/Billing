@@ -44,8 +44,10 @@ function AppInner() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
-
+      <Route path="/verify-email/:token" element={<VerifyEmail />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/*" element={
+
         <ProtectedRoute>
           <div className="min-h-screen" style={{ background: t.bgPage }}>
             <Navbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
@@ -63,8 +65,7 @@ function AppInner() {
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/suppliers" element={<Suppliers />} />
-                <Route path="/verify-email/:token" element={<VerifyEmail />} />
-                <Route path="/forgot-password" element={<ForgotPassword />} />
+
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Routes>
             </main>
