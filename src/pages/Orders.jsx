@@ -5,28 +5,55 @@ import autoTable from "jspdf-autotable";
 
 const BACKEND = "https://billing-backend-tawny.vercel.app";
 
-// ─── DUMMY DATA (existing orders table) ────────────────────────────────────
-const ORDERS = [
-  { id: "#ORD-1091", customer: "Arjun Sharma", product: "Prod-Alpha", category: "Electronics", qty: 2, amount: "₹2,400", payment: "Paid", status: "Delivered", date: "12 May" },
-  { id: "#ORD-1090", customer: "Priya Verma", product: "Prod-Beta", category: "Apparel", qty: 5, amount: "₹3,250", payment: "Pending", status: "Processing", date: "11 May" },
-  { id: "#ORD-1089", customer: "Ravi Patel", product: "Prod-Gamma", category: "Electronics", qty: 1, amount: "₹3,400", payment: "Paid", status: "Delivered", date: "11 May" },
-  { id: "#ORD-1088", customer: "Sneha Mehta", product: "Prod-Delta", category: "Home Goods", qty: 3, amount: "₹2,940", payment: "Paid", status: "Shipped", date: "10 May" },
-  { id: "#ORD-1087", customer: "Vikram Das", product: "Prod-Sigma", category: "Apparel", qty: 4, amount: "₹7,000", payment: "Pending", status: "Pending", date: "10 May" },
-  { id: "#ORD-1086", customer: "Ananya Rao", product: "Prod-Zeta", category: "Home Goods", qty: 1, amount: "₹2,300", payment: "Paid", status: "Delivered", date: "09 May" },
-  { id: "#ORD-1085", customer: "Karan Joshi", product: "Prod-Omega", category: "Electronics", qty: 2, amount: "₹11,200", payment: "Failed", status: "Cancelled", date: "08 May" },
-  { id: "#ORD-1084", customer: "Meera Nair", product: "Prod-Lambda", category: "Apparel", qty: 10, amount: "₹4,200", payment: "Paid", status: "Delivered", date: "08 May" },
-  { id: "#ORD-1083", customer: "Rohit Gupta", product: "Prod-Theta", category: "Home Goods", qty: 2, amount: "₹2,200", payment: "Paid", status: "Shipped", date: "07 May" },
-  { id: "#ORD-1082", customer: "Divya Singh", product: "Prod-Kappa", category: "Electronics", qty: 1, amount: "₹8,900", payment: "Pending", status: "Processing", date: "06 May" },
-  { id: "#ORD-1081", customer: "Aditya Kumar", product: "Prod-Phi", category: "Apparel", qty: 6, amount: "₹3,300", payment: "Paid", status: "Delivered", date: "05 May" },
-  { id: "#ORD-1080", customer: "Pooja Iyer", product: "Prod-Psi", category: "Home Goods", qty: 3, amount: "₹2,340", payment: "Failed", status: "Cancelled", date: "04 May" },
-  { id: "#ORD-1079", customer: "Siddharth Roy", product: "Prod-Alpha", category: "Electronics", qty: 1, amount: "₹1,200", payment: "Paid", status: "Delivered", date: "03 May" },
-  { id: "#ORD-1078", customer: "Kavya Reddy", product: "Prod-Beta", category: "Apparel", qty: 3, amount: "₹1,950", payment: "Paid", status: "Shipped", date: "02 May" },
-  { id: "#ORD-1077", customer: "Nikhil Bansal", product: "Prod-Gamma", category: "Electronics", qty: 2, amount: "₹6,800", payment: "Pending", status: "Pending", date: "01 May" },
-];
+const STATUSES = ["All", "Delivered", "Processing", "Pending", "Cancelled"];
 
-const CATEGORIES = ["All", "Electronics", "Apparel", "Home Goods"];
-const STATUSES = ["All", "Delivered", "Shipped", "Processing", "Pending", "Cancelled"];
-const PAYMENTS = ["All", "Paid", "Pending", "Failed"];
+// ─── helpers ────────────────────────────────────────────────────────────
+function getOrderDate(o) {
+  const raw = o.date || o.createdAt;
+  const d = raw ? new Date(raw) : null;
+  return d && !isNaN(d.getTime()) ? d : null;
+}
+
+function formatDate(d) {
+  return d ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "—";
+}
+
+function inr(n) {
+  return "₹" + (Number(n) || 0).toLocaleString("en-IN");
+}
+
+// ─── live orders hook ───────────────────────────────────────────────────
+function useOrdersData(pollMs = 30000) {
+  const [state, setState] = useState({ loading: true, error: null, orders: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch(`${BACKEND}/api/orders`);
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const data = await res.json();
+        if (!cancelled) {
+          setState({ loading: false, error: null, orders: Array.isArray(data) ? data : [] });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setState((s) => ({ ...s, loading: false, error: "Live orders unavailable right now." }));
+        }
+      }
+    }
+
+    load();
+    const interval = setInterval(load, pollMs);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [pollMs]);
+
+  return state;
+}
 
 // ─── SHARED: build & download a PDF from invoice data ──────────────────────
 function downloadInvoicePDF(invoice) {
@@ -258,7 +285,7 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
 
   const total = items.reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
 
-  // ── Save invoice to backend (decrements stock) then generate PDF ──
+  // ── Save invoice to backend (decrements stock + creates real orders) then generate PDF ──
   const handleGenerate = async () => {
     setErr("");
     if (!customerName.trim()) return setErr("Customer name is required");
@@ -444,34 +471,43 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
 // ─── ORDERS PAGE ──────────────────────────────────────────────────────────────
 export default function Orders() {
   const { t } = useTheme();
+  const { loading, error, orders } = useOrdersData();
+  const [refreshTick, setRefreshTick] = useState(0);
+
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All");
   const [status, setStatus] = useState("All");
-  const [payment, setPayment] = useState("All");
-  const [sortKey, setSortKey] = useState("id");
+  const [sortKey, setSortKey] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [showPastInvoices, setShowPastInvoices] = useState(false);
 
-  const totalOrders = ORDERS.length;
-  const totalRevenue = "₹63,380";
-  const delivered = ORDERS.filter((o) => o.status === "Delivered").length;
-  const cancelled = ORDERS.filter((o) => o.status === "Cancelled").length;
+  const totalOrders = orders.length;
+  const totalRevenue = orders.reduce((s, o) => (o.status !== "Cancelled" ? s + (Number(o.amount) || 0) : s), 0);
+  const delivered = orders.filter((o) => o.status === "Delivered").length;
+  const cancelled = orders.filter((o) => o.status === "Cancelled").length;
 
-  const filtered = ORDERS
+  const filtered = orders
     .filter((o) => {
-      const matchSearch = o.customer.toLowerCase().includes(search.toLowerCase()) ||
-        o.id.toLowerCase().includes(search.toLowerCase()) ||
-        o.product.toLowerCase().includes(search.toLowerCase());
-      const matchCategory = category === "All" || o.category === category;
+      const matchSearch =
+        (o.customer || "").toLowerCase().includes(search.toLowerCase()) ||
+        (o.orderId || "").toLowerCase().includes(search.toLowerCase()) ||
+        (o.product || "").toLowerCase().includes(search.toLowerCase());
       const matchStatus = status === "All" || o.status === status;
-      const matchPayment = payment === "All" || o.payment === payment;
-      return matchSearch && matchCategory && matchStatus && matchPayment;
+      return matchSearch && matchStatus;
     })
     .sort((a, b) => {
-      let va = a[sortKey], vb = b[sortKey];
-      if (sortKey === "qty") { va = Number(va); vb = Number(vb); }
-      else { va = String(va).toLowerCase(); vb = String(vb).toLowerCase(); }
+      if (sortKey === "date") {
+        const va = getOrderDate(a)?.getTime() || 0;
+        const vb = getOrderDate(b)?.getTime() || 0;
+        return sortDir === "asc" ? va - vb : vb - va;
+      }
+      if (sortKey === "qty" || sortKey === "amount") {
+        const va = Number(a[sortKey]) || 0;
+        const vb = Number(b[sortKey]) || 0;
+        return sortDir === "asc" ? va - vb : vb - va;
+      }
+      const va = String(a[sortKey] || "").toLowerCase();
+      const vb = String(b[sortKey] || "").toLowerCase();
       if (va < vb) return sortDir === "asc" ? -1 : 1;
       if (va > vb) return sortDir === "asc" ? 1 : -1;
       return 0;
@@ -484,16 +520,9 @@ export default function Orders() {
 
   const statusStyle = {
     "Delivered": { color: t.green, bg: t.greenBg },
-    "Shipped": { color: t.blue, bg: `${t.blue}18` },
-    "Processing": { color: t.orange, bg: t.orangeBg },
+    "Processing": { color: t.blue, bg: `${t.blue}18` },
     "Pending": { color: t.orange, bg: t.orangeBg },
     "Cancelled": { color: t.red, bg: t.redBg },
-  };
-
-  const paymentStyle = {
-    "Paid": { color: t.green, bg: t.greenBg },
-    "Pending": { color: t.orange, bg: t.orangeBg },
-    "Failed": { color: t.red, bg: t.redBg },
   };
 
   const inputStyle = {
@@ -528,7 +557,7 @@ export default function Orders() {
       `}</style>
 
       {showInvoiceModal && (
-        <CreateInvoiceModal t={t} onClose={() => setShowInvoiceModal(false)} onSaved={() => { }} />
+        <CreateInvoiceModal t={t} onClose={() => setShowInvoiceModal(false)} onSaved={() => setRefreshTick((n) => n + 1)} />
       )}
       {showPastInvoices && (
         <PastInvoicesModal t={t} onClose={() => setShowPastInvoices(false)} />
@@ -545,7 +574,7 @@ export default function Orders() {
               transition: "color 0.25s ease",
             }}>Orders</h1>
             <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>
-              Track, filter, and manage all customer orders
+              {error ? error : "Track, filter, and manage all customer orders"}
             </p>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -562,10 +591,10 @@ export default function Orders() {
 
         {/* Stat Cards */}
         <div className="ord-stat-grid">
-          <StatCard label="Total Orders" value={totalOrders} sub="all time" />
-          <StatCard label="Total Revenue" value={totalRevenue} sub="from orders" />
-          <StatCard label="Delivered" value={delivered} trend={`${delivered} orders`} trendDir="up" sub="completed" />
-          <StatCard label="Cancelled" value={cancelled} trend={`${cancelled} orders`} trendDir="down" sub="lost" />
+          <StatCard label="Total Orders" value={loading ? "…" : totalOrders} sub="all time" />
+          <StatCard label="Total Revenue" value={loading ? "…" : inr(totalRevenue)} sub="from orders" />
+          <StatCard label="Delivered" value={loading ? "…" : delivered} trend={loading ? undefined : `${delivered} orders`} trendDir="up" sub="completed" />
+          <StatCard label="Cancelled" value={loading ? "…" : cancelled} trend={loading ? undefined : `${cancelled} orders`} trendDir="down" sub="lost" />
         </div>
 
         {/* Table Card */}
@@ -584,17 +613,11 @@ export default function Orders() {
               placeholder="Search by order, customer, product…"
               style={{ ...inputStyle, flex: "1 1 200px", minWidth: "160px" }}
             />
-            <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-              {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-            </select>
             <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
               {STATUSES.map((s) => <option key={s}>{s}</option>)}
             </select>
-            <select value={payment} onChange={(e) => setPayment(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-              {PAYMENTS.map((p) => <option key={p}>{p}</option>)}
-            </select>
             <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "auto" }}>
-              {filtered.length} of {ORDERS.length} orders
+              {loading ? "Loading…" : `${filtered.length} of ${orders.length} orders`}
             </span>
           </div>
 
@@ -604,13 +627,11 @@ export default function Orders() {
               <thead>
                 <tr style={{ borderBottom: `1px solid ${t.border}` }}>
                   {[
-                    { key: "id", label: "Order ID" },
+                    { key: "orderId", label: "Order ID" },
                     { key: "customer", label: "Customer" },
                     { key: "product", label: "Product" },
-                    { key: "category", label: "Category" },
                     { key: "qty", label: "Qty" },
                     { key: "amount", label: "Amount" },
-                    { key: "payment", label: "Payment" },
                     { key: "status", label: "Status" },
                     { key: "date", label: "Date" },
                   ].map(({ key, label }) => (
@@ -631,23 +652,29 @@ export default function Orders() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {loading ? (
                   <tr>
-                    <td colSpan={9} style={{
+                    <td colSpan={7} style={{ textAlign: "center", padding: "40px 0", color: t.textMuted, fontSize: "13px" }}>
+                      Loading orders…
+                    </td>
+                  </tr>
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{
                       textAlign: "center", padding: "40px 0",
                       color: t.textMuted, fontSize: "13px",
                     }}>No orders match your filters.</td>
                   </tr>
                 ) : filtered.map((order, i) => (
                   <tr
-                    key={order.id}
+                    key={order.orderId || order._id || i}
                     style={{
                       borderBottom: i < filtered.length - 1
                         ? `1px solid ${t.borderLight ?? t.border}` : "none",
                     }}
                   >
                     <td style={{ padding: "10px 16px 10px 0", fontFamily: "monospace", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>
-                      {order.id}
+                      {order.orderId}
                     </td>
                     <td style={{ padding: "10px 16px 10px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>
                       {order.customer}
@@ -655,39 +682,25 @@ export default function Orders() {
                     <td style={{ padding: "10px 16px 10px 0", fontSize: "12px", color: t.textMuted, whiteSpace: "nowrap" }}>
                       {order.product}
                     </td>
-                    <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted }}>
-                      {order.category}
-                    </td>
                     <td style={{ padding: "10px 16px 10px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif" }}>
-                      {order.qty}
+                      {order.qty ?? 1}
                     </td>
                     <td style={{ padding: "10px 16px 10px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>
-                      {order.amount}
+                      {inr(order.amount)}
                     </td>
                     <td style={{ padding: "10px 16px 10px 0" }}>
                       <span style={{
                         fontSize: "10px", fontWeight: 600,
                         padding: "3px 9px", borderRadius: "99px",
-                        color: paymentStyle[order.payment].color,
-                        background: paymentStyle[order.payment].bg,
+                        color: (statusStyle[order.status] || statusStyle.Pending).color,
+                        background: (statusStyle[order.status] || statusStyle.Pending).bg,
                         whiteSpace: "nowrap",
                       }}>
-                        {order.payment}
-                      </span>
-                    </td>
-                    <td style={{ padding: "10px 16px 10px 0" }}>
-                      <span style={{
-                        fontSize: "10px", fontWeight: 600,
-                        padding: "3px 9px", borderRadius: "99px",
-                        color: statusStyle[order.status].color,
-                        background: statusStyle[order.status].bg,
-                        whiteSpace: "nowrap",
-                      }}>
-                        {order.status}
+                        {order.status || "Pending"}
                       </span>
                     </td>
                     <td style={{ padding: "10px 0", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>
-                      {order.date}
+                      {formatDate(getOrderDate(order))}
                     </td>
                   </tr>
                 ))}

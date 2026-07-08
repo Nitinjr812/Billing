@@ -1,27 +1,111 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
 
-// ─── DUMMY DATA ───────────────────────────────────────────────────────────────
-const CUSTOMERS = [
-  { id: "CUS-001", name: "Arjun Sharma",   email: "arjun@email.com",   phone: "+91 98201 11234", city: "Mumbai",    segment: "Premium",  orders: 12, spent: "₹48,200",  status: "Active",   joined: "12 Jan 2024" },
-  { id: "CUS-002", name: "Priya Verma",    email: "priya@email.com",   phone: "+91 97302 22345", city: "Delhi",     segment: "Regular",  orders: 5,  spent: "₹12,750",  status: "Active",   joined: "03 Feb 2024" },
-  { id: "CUS-003", name: "Ravi Patel",     email: "ravi@email.com",    phone: "+91 96403 33456", city: "Ahmedabad", segment: "Premium",  orders: 19, spent: "₹91,400",  status: "Active",   joined: "18 Nov 2023" },
-  { id: "CUS-004", name: "Sneha Mehta",    email: "sneha@email.com",   phone: "+91 95504 44567", city: "Pune",      segment: "Regular",  orders: 3,  spent: "₹8,300",   status: "Inactive", joined: "25 Mar 2024" },
-  { id: "CUS-005", name: "Vikram Das",     email: "vikram@email.com",  phone: "+91 94605 55678", city: "Kolkata",   segment: "New",      orders: 1,  spent: "₹9,800",   status: "Active",   joined: "08 May 2024" },
-  { id: "CUS-006", name: "Ananya Rao",     email: "ananya@email.com",  phone: "+91 93706 66789", city: "Hyderabad", segment: "Premium",  orders: 22, spent: "₹1,24,600",status: "Active",   joined: "01 Sep 2023" },
-  { id: "CUS-007", name: "Karan Joshi",    email: "karan@email.com",   phone: "+91 92807 77890", city: "Jaipur",    segment: "Regular",  orders: 7,  spent: "₹19,300",  status: "Inactive", joined: "14 Dec 2023" },
-  { id: "CUS-008", name: "Meera Nair",     email: "meera@email.com",   phone: "+91 91908 88901", city: "Kochi",     segment: "Regular",  orders: 9,  spent: "₹27,800",  status: "Active",   joined: "22 Oct 2023" },
-  { id: "CUS-009", name: "Rohit Gupta",    email: "rohit@email.com",   phone: "+91 90009 99012", city: "Lucknow",   segment: "New",      orders: 2,  spent: "₹5,600",   status: "Active",   joined: "30 Apr 2024" },
-  { id: "CUS-010", name: "Divya Singh",    email: "divya@email.com",   phone: "+91 89110 10123", city: "Chennai",   segment: "Premium",  orders: 16, spent: "₹73,200",  status: "Active",   joined: "07 Jul 2023" },
-  { id: "CUS-011", name: "Aditya Kumar",   email: "aditya@email.com",  phone: "+91 88211 21234", city: "Bengaluru", segment: "Regular",  orders: 6,  spent: "₹16,500",  status: "Active",   joined: "19 Feb 2024" },
-  { id: "CUS-012", name: "Pooja Iyer",     email: "pooja@email.com",   phone: "+91 87312 32345", city: "Coimbatore",segment: "New",      orders: 1,  spent: "₹2,340",   status: "Inactive", joined: "02 May 2024" },
-  { id: "CUS-013", name: "Siddharth Roy",  email: "sid@email.com",     phone: "+91 86413 43456", city: "Bhopal",    segment: "Regular",  orders: 4,  spent: "₹11,200",  status: "Active",   joined: "11 Aug 2023" },
-  { id: "CUS-014", name: "Kavya Reddy",    email: "kavya@email.com",   phone: "+91 85514 54567", city: "Vijayawada",segment: "Premium",  orders: 14, spent: "₹58,900",  status: "Active",   joined: "29 Jun 2023" },
-  { id: "CUS-015", name: "Nikhil Bansal",  email: "nikhil@email.com",  phone: "+91 84615 65678", city: "Chandigarh",segment: "New",      orders: 2,  spent: "₹13,600",  status: "Active",   joined: "14 May 2024" },
-];
+const BACKEND = "https://billing-backend-tawny.vercel.app";
 
 const SEGMENTS = ["All", "Premium", "Regular", "New"];
 const STATUSES = ["All", "Active", "Inactive"];
+
+const ACTIVE_WINDOW_DAYS = 60;
+const PREMIUM_SPEND_THRESHOLD = 50000;
+
+// ─── helpers ────────────────────────────────────────────────────────────
+function daysBetween(a, b) {
+  return Math.abs(a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24);
+}
+
+function formatDate(d) {
+  return d ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+}
+
+function inr(n) {
+  return "₹" + (Number(n) || 0).toLocaleString("en-IN");
+}
+
+// Group invoices into one row per customer (keyed by email, falling back to name)
+function aggregateCustomers(invoices) {
+  const groups = new Map();
+
+  invoices.forEach((inv) => {
+    const key = (inv.customerEmail || inv.customerName || "unknown").toLowerCase();
+    const createdAt = inv.createdAt ? new Date(inv.createdAt) : null;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        name: inv.customerName || "Unknown",
+        email: inv.customerEmail || "",
+        phone: inv.customerPhone || "",
+        orders: 0,
+        spent: 0,
+        joined: createdAt,
+        lastOrder: createdAt,
+      });
+    }
+
+    const g = groups.get(key);
+    g.orders += 1;
+    g.spent += Number(inv.total) || 0;
+    if (createdAt && (!g.joined || createdAt < g.joined)) g.joined = createdAt;
+    if (createdAt && (!g.lastOrder || createdAt > g.lastOrder)) g.lastOrder = createdAt;
+    // keep the most recent name/email/phone in case of updates
+    if (createdAt && g.lastOrder && createdAt.getTime() === g.lastOrder.getTime()) {
+      g.name = inv.customerName || g.name;
+      g.phone = inv.customerPhone || g.phone;
+    }
+  });
+
+  const now = new Date();
+  return [...groups.entries()].map(([key, g], idx) => {
+    const status = g.lastOrder && daysBetween(now, g.lastOrder) <= ACTIVE_WINDOW_DAYS ? "Active" : "Inactive";
+    const segment = g.orders <= 1 ? "New" : g.spent >= PREMIUM_SPEND_THRESHOLD ? "Premium" : "Regular";
+    return {
+      id: `CUS-${String(idx + 1).padStart(3, "0")}`,
+      key,
+      name: g.name,
+      email: g.email,
+      phone: g.phone,
+      orders: g.orders,
+      spent: g.spent,
+      status,
+      segment,
+      joined: g.joined,
+    };
+  });
+}
+
+// ─── live customers hook (derived from real invoices) ─────────────────────
+function useCustomersData(pollMs = 60000) {
+  const [state, setState] = useState({ loading: true, error: null, customers: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch(`${BACKEND}/api/invoices`);
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const invoices = await res.json();
+        const customers = aggregateCustomers(Array.isArray(invoices) ? invoices : []);
+        if (!cancelled) {
+          setState({ loading: false, error: null, customers });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setState((s) => ({ ...s, loading: false, error: "Live customer data unavailable right now." }));
+        }
+      }
+    }
+
+    load();
+    const interval = setInterval(load, pollMs);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [pollMs]);
+
+  return state;
+}
 
 function StatCard({ label, value, trend, trendDir, sub }) {
   const { t } = useTheme();
@@ -46,9 +130,9 @@ function StatCard({ label, value, trend, trendDir, sub }) {
 
 // ─── AVATAR ──────────────────────────────────────────────────────────────────
 function Avatar({ name, t }) {
-  const initials = name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+  const initials = (name || "?").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
   const colors = ["#6366f1", "#f59e0b", "#10b981", "#3b82f6", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316"];
-  const color = colors[name.charCodeAt(0) % colors.length];
+  const color = colors[(name || "?").charCodeAt(0) % colors.length];
   return (
     <div style={{
       width: 30, height: 30, borderRadius: "50%",
@@ -63,29 +147,41 @@ function Avatar({ name, t }) {
 // ─── CUSTOMERS PAGE ───────────────────────────────────────────────────────────
 export default function Customers() {
   const { t } = useTheme();
+  const { loading, error, customers } = useCustomersData();
+
   const [search, setSearch]     = useState("");
   const [segment, setSegment]   = useState("All");
   const [status, setStatus]     = useState("All");
-  const [sortKey, setSortKey]   = useState("id");
-  const [sortDir, setSortDir]   = useState("asc");
+  const [sortKey, setSortKey]   = useState("orders");
+  const [sortDir, setSortDir]   = useState("desc");
 
-  const total    = CUSTOMERS.length;
-  const active   = CUSTOMERS.filter((c) => c.status === "Active").length;
-  const premium  = CUSTOMERS.filter((c) => c.segment === "Premium").length;
-  const newCusts = CUSTOMERS.filter((c) => c.segment === "New").length;
+  const now = new Date();
+  const total    = customers.length;
+  const active   = customers.filter((c) => c.status === "Active").length;
+  const premium  = customers.filter((c) => c.segment === "Premium").length;
+  const newCusts = customers.filter((c) => c.joined && c.joined.getMonth() === now.getMonth() && c.joined.getFullYear() === now.getFullYear()).length;
 
-  const filtered = CUSTOMERS
+  const filtered = customers
     .filter((c) => {
       const q = search.toLowerCase();
-      const matchSearch  = c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.id.toLowerCase().includes(q) || c.city.toLowerCase().includes(q);
+      const matchSearch  = (c.name || "").toLowerCase().includes(q) || (c.email || "").toLowerCase().includes(q) || c.id.toLowerCase().includes(q) || (c.phone || "").toLowerCase().includes(q);
       const matchSegment = segment === "All" || c.segment === segment;
       const matchStatus  = status  === "All" || c.status  === status;
       return matchSearch && matchSegment && matchStatus;
     })
     .sort((a, b) => {
-      let va = a[sortKey], vb = b[sortKey];
-      if (sortKey === "orders") { va = Number(va); vb = Number(vb); }
-      else { va = String(va).toLowerCase(); vb = String(vb).toLowerCase(); }
+      if (sortKey === "orders" || sortKey === "spent") {
+        const va = Number(a[sortKey]) || 0;
+        const vb = Number(b[sortKey]) || 0;
+        return sortDir === "asc" ? va - vb : vb - va;
+      }
+      if (sortKey === "joined") {
+        const va = a.joined?.getTime() || 0;
+        const vb = b.joined?.getTime() || 0;
+        return sortDir === "asc" ? va - vb : vb - va;
+      }
+      const va = String(a[sortKey] || "").toLowerCase();
+      const vb = String(b[sortKey] || "").toLowerCase();
       if (va < vb) return sortDir === "asc" ? -1 : 1;
       if (va > vb) return sortDir === "asc" ?  1 : -1;
       return 0;
@@ -133,14 +229,16 @@ export default function Customers() {
 
         <div>
           <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "28px", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", transition: "color 0.25s ease" }}>Customers</h1>
-          <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>View and manage your customer base</p>
+          <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>
+            {error ? error : "View and manage your customer base"}
+          </p>
         </div>
 
         <div className="cus-stat-grid">
-          <StatCard label="Total Customers" value={total}   sub="registered"       />
-          <StatCard label="Active"          value={active}  trend={`${active} active`}   trendDir="up"  sub="this month" />
-          <StatCard label="Premium"         value={premium} trend={`${premium} members`} trendDir="neu" sub="top spenders" />
-          <StatCard label="New This Month"  value={newCusts} trend={`+${newCusts} new`}  trendDir="up"  sub="joined recently" />
+          <StatCard label="Total Customers" value={loading ? "…" : total}    sub="registered"       />
+          <StatCard label="Active"          value={loading ? "…" : active}  trend={loading ? undefined : `${active} active`}   trendDir="up"  sub="last 60 days" />
+          <StatCard label="Premium"         value={loading ? "…" : premium} trend={loading ? undefined : `${premium} members`} trendDir="neu" sub="top spenders" />
+          <StatCard label="New This Month"  value={loading ? "…" : newCusts} trend={loading ? undefined : `+${newCusts} new`}  trendDir="up"  sub="joined recently" />
         </div>
 
         <div style={{
@@ -149,14 +247,16 @@ export default function Customers() {
           display: "flex", flexDirection: "column", gap: "16px",
         }}>
           <div className="cus-filters">
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name, email, city…" style={{ ...inputStyle, flex: "1 1 200px", minWidth: "160px" }} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name, email, phone…" style={{ ...inputStyle, flex: "1 1 200px", minWidth: "160px" }} />
             <select value={segment} onChange={(e) => setSegment(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
               {SEGMENTS.map((s) => <option key={s}>{s}</option>)}
             </select>
             <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
               {STATUSES.map((s) => <option key={s}>{s}</option>)}
             </select>
-            <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "auto" }}>{filtered.length} of {CUSTOMERS.length} customers</span>
+            <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "auto" }}>
+              {loading ? "Loading…" : `${filtered.length} of ${customers.length} customers`}
+            </span>
           </div>
 
           <div className="cus-table-wrap">
@@ -167,7 +267,7 @@ export default function Customers() {
                     { key: "id",      label: "ID"       },
                     { key: "name",    label: "Customer" },
                     { key: "email",   label: "Email"    },
-                    { key: "city",    label: "City"     },
+                    { key: "phone",   label: "Phone"    },
                     { key: "segment", label: "Segment"  },
                     { key: "orders",  label: "Orders"   },
                     { key: "spent",   label: "Spent"    },
@@ -185,7 +285,9 @@ export default function Customers() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {loading ? (
+                  <tr><td colSpan={9} style={{ textAlign: "center", padding: "40px 0", color: t.textMuted, fontSize: "13px" }}>Loading customers…</td></tr>
+                ) : filtered.length === 0 ? (
                   <tr><td colSpan={9} style={{ textAlign: "center", padding: "40px 0", color: t.textMuted, fontSize: "13px" }}>No customers match your filters.</td></tr>
                 ) : filtered.map((c, i) => (
                   <tr key={c.id} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${t.borderLight ?? t.border}` : "none" }}>
@@ -196,17 +298,17 @@ export default function Customers() {
                         <span style={{ fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>{c.name}</span>
                       </div>
                     </td>
-                    <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted }}>{c.email}</td>
-                    <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted }}>{c.city}</td>
+                    <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted }}>{c.email || "—"}</td>
+                    <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>{c.phone || "—"}</td>
                     <td style={{ padding: "10px 16px 10px 0" }}>
                       <span style={{ fontSize: "10px", fontWeight: 600, padding: "3px 9px", borderRadius: "99px", color: segmentStyle[c.segment].color, background: segmentStyle[c.segment].bg, whiteSpace: "nowrap" }}>{c.segment}</span>
                     </td>
                     <td style={{ padding: "10px 16px 10px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif" }}>{c.orders}</td>
-                    <td style={{ padding: "10px 16px 10px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>{c.spent}</td>
+                    <td style={{ padding: "10px 16px 10px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>{inr(c.spent)}</td>
                     <td style={{ padding: "10px 16px 10px 0" }}>
                       <span style={{ fontSize: "10px", fontWeight: 600, padding: "3px 9px", borderRadius: "99px", color: statusStyle[c.status].color, background: statusStyle[c.status].bg }}>{c.status}</span>
                     </td>
-                    <td style={{ padding: "10px 0", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>{c.joined}</td>
+                    <td style={{ padding: "10px 0", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>{formatDate(c.joined)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -216,4 +318,4 @@ export default function Customers() {
       </div>
     </>
   );
-}
+} 

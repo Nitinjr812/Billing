@@ -142,60 +142,59 @@ function computeKpis(stats, orders) {
   };
 }
 
-// ─── shop list hook (for the shop selector) ────────────────────────────────
-function useShopList() {
-  const [shops, setShops] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`${BACKEND}/api/shops/shops`)
-      .then((r) => r.json())
-      .then((data) => { if (!cancelled) setShops(Array.isArray(data) ? data : []); })
-      .catch(() => { if (!cancelled) setShops([]); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
-
-  return { shops, loading };
-}
-
 // ─── live data hook (single source of truth for the whole dashboard) ──────
-// Uses the multi-shop consolidated endpoint, since that's where the real
-// seeded data actually lives (legacy /api/orders /api/products hit an empty
-// Mongo collection).
-function useDashboardData(shopId, pollMs = 60000) {
+// Pulls straight from the real MongoDB-backed legacy routes — no shop
+// selection, no seed data. One shop, real orders/products/stats.
+function useDashboardData(pollMs = 60000) {
   const [state, setState] = useState({
     loading: true,
     error: null,
-    shop: null,
     stats: null,
     products: [],
     orders: [],
+    alerts: null,
   });
 
   useEffect(() => {
-    if (!shopId) return;
     let cancelled = false;
 
     async function load() {
       try {
-        const res = await fetch(`${BACKEND}/api/shops/dashboard/${shopId}`);
-        if (!res.ok) throw new Error(`Request failed (${res.status})`);
-        const data = await res.json();
+        const [ordersRes, statsRes, productsRes, alertsRes] = await Promise.all([
+          fetch(`${BACKEND}/api/orders`),
+          fetch(`${BACKEND}/api/orders/stats`),
+          fetch(`${BACKEND}/api/products`),
+          fetch(`${BACKEND}/api/products/alerts`),
+        ]);
+
+        if (!ordersRes.ok || !statsRes.ok || !productsRes.ok || !alertsRes.ok) {
+          throw new Error("One or more dashboard requests failed");
+        }
+
+        const [orders, stats, products, alerts] = await Promise.all([
+          ordersRes.json(),
+          statsRes.json(),
+          productsRes.json(),
+          alertsRes.json(),
+        ]);
+
         if (!cancelled) {
           setState({
             loading: false,
             error: null,
-            shop: data.shop || null,
-            stats: data.stats || null,
-            products: data.products || [],
-            orders: data.orders || [],
+            stats,
+            products: Array.isArray(products) ? products : [],
+            orders: Array.isArray(orders) ? orders : [],
+            alerts,
           });
         }
       } catch (err) {
         if (!cancelled) {
-          setState((s) => ({ ...s, loading: false, error: "Live data unavailable. Showing last known / empty state." }));
+          setState((s) => ({
+            ...s,
+            loading: false,
+            error: "Live data unavailable. Showing last known / empty state.",
+          }));
         }
       }
     }
@@ -206,12 +205,12 @@ function useDashboardData(shopId, pollMs = 60000) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [shopId, pollMs]);
+  }, [pollMs]);
 
   return state;
 }
 
-// ─── AI CHAT WIDGET (already dynamic — unchanged) ──────────────────────────
+// ─── AI CHAT WIDGET (unchanged) ────────────────────────────────────────────
 async function fetchLiveDashboardContext() {
   try {
     const [statsRes, productsRes, alertsRes, ordersRes] = await Promise.all([
@@ -635,7 +634,7 @@ function OrderDonut({ stats, loading }) {
   return <div style={{ height: 220 }}><Doughnut data={data} options={options} /></div>;
 }
 
-// ─── STOCK BAR (already dynamic — now takes shared products, no own fetch) ─
+// ─── STOCK BAR (dynamic — shared products, no own fetch) ──────────────────
 function StockBar({ products, loading }) {
   const { t } = useTheme();
   const tooltipDefaults = { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody };
@@ -715,7 +714,7 @@ function InvoicesTable({ orders, loading }) {
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", minWidth: "280px" }}>
         <thead>
           <tr style={{ borderBottom: `1px solid ${t.border}` }}>
-            {["Order", "Customer", "Amount", "Status"].map((h) => (
+            {["Order", "Customer", "Amount"].map((h) => (
               <th key={h} style={{ textAlign: "left", paddingBottom: "10px", fontSize: "9px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted, fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>
                 {h}
               </th>
@@ -730,11 +729,7 @@ function InvoicesTable({ orders, loading }) {
                 <td style={{ padding: "9px 0", fontFamily: "monospace", fontSize: "10px", color: t.textMuted, whiteSpace: "nowrap" }}>{o.orderId || o._id || "—"}</td>
                 <td style={{ padding: "9px 8px 9px 0", fontWeight: 500, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", maxWidth: "90px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.customer || "—"}</td>
                 <td style={{ padding: "9px 8px 9px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>{inr(o.amount)}</td>
-                <td style={{ padding: "9px 0" }}>
-                  <span style={{ fontSize: "9px", fontWeight: 600, padding: "2px 8px", borderRadius: "99px", color: style.color, background: style.bg, whiteSpace: "nowrap" }}>
-                    {o.status || "Unknown"}
-                  </span>
-                </td>
+                
               </tr>
             );
           })}
@@ -774,17 +769,7 @@ const styles = `
 // ─── DASHBOARD PAGE ─────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { t } = useTheme();
-  const { shops, loading: shopsLoading } = useShopList();
-  const [selectedShopId, setSelectedShopId] = useState(null);
-
-  // default to the first shop once the shop list arrives
-  useEffect(() => {
-    if (!selectedShopId && shops.length > 0) {
-      setSelectedShopId(shops[0].shopId);
-    }
-  }, [shops, selectedShopId]);
-
-  const { loading, error, shop, stats, products, orders } = useDashboardData(selectedShopId);
+  const { loading, error, stats, products, orders } = useDashboardData();
 
   const monthlyRevenue = buildMonthlyRevenue(orders);
   const customerGrowth = buildCustomerGrowth(orders);
@@ -796,37 +781,13 @@ export default function Dashboard() {
       <div style={{ display: "flex", flexDirection: "column", gap: "14px", minWidth: 0, overflow: "hidden" }}>
 
         {/* Page Header */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
-          <div>
-            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(20px, 6vw, 28px)", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", transition: "color 0.25s ease", margin: 0 }}>
-              Dashboard
-            </h1>
-            <p style={{ fontSize: "12px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
-              {error ? error : shop ? `${shop.name}${shop.city ? " — " + shop.city : ""}` : "Welcome back — here's your business at a glance"}
-            </p>
-          </div>
-
-          {!shopsLoading && shops.length > 1 && (
-            <select
-              value={selectedShopId || ""}
-              onChange={(e) => setSelectedShopId(e.target.value)}
-              style={{
-                fontSize: "12px",
-                fontWeight: 600,
-                padding: "7px 10px",
-                borderRadius: "10px",
-                background: t.bgCard,
-                border: `1px solid ${t.border}`,
-                color: t.textPrimary,
-                fontFamily: "'DM Sans', sans-serif",
-                cursor: "pointer",
-              }}
-            >
-              {shops.map((s) => (
-                <option key={s.shopId} value={s.shopId}>{s.name}</option>
-              ))}
-            </select>
-          )}
+        <div>
+          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(20px, 6vw, 28px)", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", transition: "color 0.25s ease", margin: 0 }}>
+            Dashboard
+          </h1>
+          <p style={{ fontSize: "12px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
+            {error ? error : "Welcome back — here's your business at a glance"}
+          </p>
         </div>
 
         {/* KPI Row */}
