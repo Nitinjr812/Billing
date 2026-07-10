@@ -7,6 +7,37 @@ const BACKEND = "https://billing-backend-tawny.vercel.app";
 
 const STATUSES = ["All", "Delivered", "Processing", "Pending", "Cancelled"];
 
+// ─── Brand config — swap logo path here when you have the image ───────
+const BRAND = {
+  name: "Draftbill",
+  tagline: "Invoicing, made simple",
+  accentRGB: [37, 99, 235],   // blue accent — change to match your brand
+  darkRGB: [17, 24, 39],
+  grayRGB: [107, 114, 128],
+  lightBgRGB: [245, 247, 250],
+  logoDataUrl: null, // <-- put a base64 image string here later, e.g. "data:image/png;base64,...."
+};
+
+// ─── Icons (no external deps needed) ───────────────────────────────────
+function EyeIcon({ size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function DownloadIcon({ size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 21h14" />
+    </svg>
+  );
+}
+
 // ─── helpers ────────────────────────────────────────────────────────────
 function getOrderDate(o) {
   const raw = o.date || o.createdAt;
@@ -20,6 +51,36 @@ function formatDate(d) {
 
 function inr(n) {
   return "₹" + (Number(n) || 0).toLocaleString("en-IN");
+}
+
+// Match an order to the invoice that created it
+function findInvoiceForOrder(order, invoices) {
+  if (!invoices || !invoices.length) return null;
+
+  // 1) Direct link, if backend stores it on the order
+  if (order.invoiceId) {
+    const direct = invoices.find(
+      (inv) => inv.invoiceId === order.invoiceId || inv._id === order.invoiceId
+    );
+    if (direct) return direct;
+  }
+
+  // 2) Fallback: same customer + product appears in invoice items
+  const orderDate = getOrderDate(order);
+  const candidates = invoices.filter(
+    (inv) =>
+      (inv.customerName || "").toLowerCase() === (order.customer || "").toLowerCase() &&
+      inv.items?.some((it) => (it.name || "").toLowerCase() === (order.product || "").toLowerCase())
+  );
+  if (!candidates.length) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  // pick the invoice closest in date to the order
+  return candidates.reduce((best, cur) => {
+    const bd = Math.abs(new Date(best.createdAt).getTime() - (orderDate?.getTime() || 0));
+    const cd = Math.abs(new Date(cur.createdAt).getTime() - (orderDate?.getTime() || 0));
+    return cd < bd ? cur : best;
+  });
 }
 
 // ─── live orders hook ───────────────────────────────────────────────────
@@ -55,28 +116,118 @@ function useOrdersData(pollMs = 30000) {
   return state;
 }
 
-// ─── SHARED: build & download a PDF from invoice data ──────────────────────
+// ─── live invoices hook ─────────────────────────────────────────────────
+function useInvoicesData(pollMs = 30000) {
+  const [state, setState] = useState({ loading: true, error: null, invoices: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch(`${BACKEND}/api/invoices`);
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const data = await res.json();
+        if (!cancelled) {
+          setState({ loading: false, error: null, invoices: Array.isArray(data) ? data : [] });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setState((s) => ({ ...s, loading: false, error: "Invoices unavailable right now." }));
+        }
+      }
+    }
+
+    load();
+    const interval = setInterval(load, pollMs);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [pollMs]);
+
+  return state;
+}
+
+// ─── SHARED: build & download a professional PDF invoice ──────────────
 function downloadInvoicePDF(invoice) {
   const doc = new jsPDF();
-  const date = new Date(invoice.createdAt || Date.now()).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  const date = new Date(invoice.createdAt || Date.now()).toLocaleDateString("en-IN", {
+    day: "2-digit", month: "short", year: "numeric",
+  });
 
+  // ── Header band ──
+  doc.setFillColor(...BRAND.darkRGB);
+  doc.rect(0, 0, pageWidth, 38, "F");
+
+  if (BRAND.logoDataUrl) {
+    // Logo image — adjust width/height to match your actual logo's aspect ratio
+    doc.addImage(BRAND.logoDataUrl, "PNG", margin, 9, 20, 20);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(255, 255, 255);
+    doc.text(BRAND.name, margin + 26, 18);
+  } else {
+    // Placeholder logo box until image is provided
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.6);
+    doc.roundedRect(margin, 9, 20, 20, 3, 3);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text("DB", margin + 10, 21, { align: "center" });
+
+    doc.setFontSize(16);
+    doc.text(BRAND.name, margin + 26, 18);
+  }
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(200, 205, 215);
+  doc.text(BRAND.tagline, margin + 26, 25);
+
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
-  doc.setFont("helvetica", "bold");
-  doc.text("INVOICE", 14, 20);
-
-  doc.setFontSize(10);
+  doc.setTextColor(255, 255, 255);
+  doc.text("INVOICE", pageWidth - margin, 20, { align: "right" });
   doc.setFont("helvetica", "normal");
-  doc.text(`Invoice #: ${invoice.invoiceId}`, 14, 30);
-  doc.text(`Date: ${date}`, 14, 36);
+  doc.setFontSize(9);
+  doc.setTextColor(200, 205, 215);
+  doc.text(`#${invoice.invoiceId}`, pageWidth - margin, 27, { align: "right" });
 
+  // ── Meta row: date + bill-to ──
+  let y = 52;
   doc.setFont("helvetica", "bold");
-  doc.text("Bill To:", 14, 48);
-  doc.setFont("helvetica", "normal");
-  doc.text(invoice.customerName, 14, 54);
-  let y = 60;
-  if (invoice.customerEmail) { doc.text(invoice.customerEmail, 14, y); y += 6; }
-  if (invoice.customerPhone) { doc.text(invoice.customerPhone, 14, y); y += 6; }
+  doc.setFontSize(9);
+  doc.setTextColor(...BRAND.grayRGB);
+  doc.text("BILLED TO", margin, y);
+  doc.text("INVOICE DATE", pageWidth - margin, y, { align: "right" });
 
+  y += 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(...BRAND.darkRGB);
+  doc.text(invoice.customerName, margin, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.text(date, pageWidth - margin, y, { align: "right" });
+
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...BRAND.grayRGB);
+  if (invoice.customerEmail) { doc.text(invoice.customerEmail, margin, y); y += 5; }
+  if (invoice.customerPhone) { doc.text(invoice.customerPhone, margin, y); y += 5; }
+
+  // ── Divider ──
+  y += 4;
+  doc.setDrawColor(230, 230, 235);
+  doc.setLineWidth(0.5);
+  doc.line(margin, y, pageWidth - margin, y);
+
+  // ── Items table ──
   const tableRows = invoice.items.map((it) => [
     it.name,
     String(it.qty),
@@ -85,16 +236,56 @@ function downloadInvoicePDF(invoice) {
   ]);
 
   autoTable(doc, {
-    startY: Math.max(y + 6, 74),
+    startY: y + 8,
     head: [["Item", "Qty", "Price", "Amount"]],
     body: tableRows,
-    theme: "grid",
-    headStyles: { fillColor: [30, 30, 30] },
+    theme: "plain",
+    styles: {
+      fontSize: 10,
+      cellPadding: { top: 6, bottom: 6, left: 4, right: 4 },
+      textColor: BRAND.darkRGB,
+    },
+    headStyles: {
+      fillColor: BRAND.darkRGB,
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      fontSize: 9,
+    },
+    alternateRowStyles: { fillColor: BRAND.lightBgRGB },
+    columnStyles: {
+      1: { halign: "center" },
+      2: { halign: "right" },
+      3: { halign: "right" },
+    },
   });
 
-  const finalY = doc.lastAutoTable.finalY + 10;
+  // ── Totals box ──
+  const finalY = doc.lastAutoTable.finalY + 8;
+  const boxW = 70;
+  const boxX = pageWidth - margin - boxW;
+
+  doc.setFillColor(...BRAND.lightBgRGB);
+  doc.roundedRect(boxX, finalY, boxW, 18, 2, 2, "F");
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(...BRAND.grayRGB);
+  doc.text("Total Amount", boxX + 6, finalY + 8);
+
   doc.setFont("helvetica", "bold");
-  doc.text(`Total: Rs. ${Number(invoice.total).toLocaleString("en-IN")}`, 140, finalY);
+  doc.setFontSize(13);
+  doc.setTextColor(...BRAND.accentRGB);
+  doc.text(`Rs. ${Number(invoice.total).toLocaleString("en-IN")}`, boxX + boxW - 6, finalY + 13, { align: "right" });
+
+  // ── Footer ──
+  const pageHeight = doc.internal.pageSize.getHeight();
+  doc.setDrawColor(230, 230, 235);
+  doc.line(margin, pageHeight - 20, pageWidth - margin, pageHeight - 20);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...BRAND.grayRGB);
+  doc.text("Thank you for your business!", margin, pageHeight - 13);
+  doc.text(`Generated by ${BRAND.name}`, pageWidth - margin, pageHeight - 13, { align: "right" });
 
   doc.save(`${invoice.invoiceId}.pdf`);
 }
@@ -121,18 +312,8 @@ function StatCard({ label, value, trend, trendDir, sub }) {
   );
 }
 
-// ─── PAST INVOICES MODAL ────────────────────────────────────────────────────
-function PastInvoicesModal({ onClose, t }) {
-  const [invoices, setInvoices] = useState(null);
-  const [err, setErr] = useState("");
-
-  useEffect(() => {
-    fetch(`${BACKEND}/api/invoices`)
-      .then((res) => res.json())
-      .then(setInvoices)
-      .catch(() => setErr("Failed to load past invoices"));
-  }, []);
-
+// ─── SINGLE INVOICE VIEW MODAL ──────────────────────────────────────────────
+function InvoiceViewModal({ invoice, onClose, t }) {
   return (
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
@@ -140,45 +321,50 @@ function PastInvoicesModal({ onClose, t }) {
     }} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={{
         background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16,
-        padding: 24, width: "100%", maxWidth: 640, maxHeight: "80vh", overflowY: "auto",
-        display: "flex", flexDirection: "column", gap: 14,
+        padding: 24, width: "100%", maxWidth: 480, display: "flex", flexDirection: "column",
+        gap: 14, maxHeight: "85vh", overflowY: "auto",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 18, color: t.textPrimary, margin: 0 }}>Past Invoices</h3>
+          <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 18, color: t.textPrimary, margin: 0 }}>
+            {invoice.invoiceId}
+          </h3>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: t.textMuted, fontSize: 20, cursor: "pointer" }}>×</button>
         </div>
 
-        {err && <p style={{ fontSize: 12, color: t.red }}>{err}</p>}
-        {!invoices && !err && <p style={{ fontSize: 13, color: t.textMuted }}>Loading...</p>}
-        {invoices && invoices.length === 0 && <p style={{ fontSize: 13, color: t.textMuted }}>No invoices created yet.</p>}
+        <div>
+          <p style={{ fontWeight: 700, fontSize: 13, color: t.textPrimary, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>
+            {invoice.customerName}
+          </p>
+          {invoice.customerEmail && <p style={{ fontSize: 12, color: t.textMuted, margin: "2px 0 0" }}>{invoice.customerEmail}</p>}
+          {invoice.customerPhone && <p style={{ fontSize: 12, color: t.textMuted, margin: "2px 0 0" }}>{invoice.customerPhone}</p>}
+        </div>
 
-        {invoices && invoices.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {invoices.map((inv) => (
-              <div key={inv._id} style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-                padding: "12px 14px", borderRadius: 12, border: `1px solid ${t.border}`,
-                flexWrap: "wrap",
-              }}>
-                <div style={{ minWidth: 0 }}>
-                  <p style={{ fontWeight: 700, fontSize: 13, color: t.textPrimary, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>
-                    {inv.invoiceId} — {inv.customerName}
-                  </p>
-                  <p style={{ fontSize: 11, color: t.textMuted, margin: "2px 0 0" }}>
-                    {new Date(inv.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} · {inv.items.length} item(s) · ₹{Number(inv.total).toLocaleString("en-IN")}
-                  </p>
-                </div>
-                <button
-                  onClick={() => downloadInvoicePDF(inv)}
-                  style={{
-                    background: t.accent, color: "#fff", border: "none", borderRadius: 8,
-                    padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0,
-                  }}
-                >⬇ Download</button>
-              </div>
-            ))}
-          </div>
-        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: `1px solid ${t.border}`, paddingTop: 10 }}>
+          {invoice.items.map((it, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: t.textPrimary }}>
+              <span>{it.name} × {it.qty}</span>
+              <span>{inr(it.qty * it.price)}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: t.textMuted }}>
+            {new Date(invoice.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+          </span>
+          <span style={{ fontWeight: 900, fontFamily: "'Syne', sans-serif", fontSize: 16, color: t.textPrimary }}>
+            {inr(invoice.total)}
+          </span>
+        </div>
+
+        <button
+          onClick={() => downloadInvoicePDF(invoice)}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            background: t.accent, color: "#fff", border: "none", borderRadius: 10,
+            padding: "10px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+          }}
+        ><DownloadIcon size={14} /> Download PDF</button>
       </div>
     </div>
   );
@@ -198,6 +384,7 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const recognitionRef = useRef(null);
+  const shouldListenRef = useRef(false);
 
   useEffect(() => {
     fetch(`${BACKEND}/api/products`)
@@ -206,7 +393,15 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
       .catch(() => setProducts([]));
   }, []);
 
-  // ── Voice recognition (Chrome/Edge only) ──
+  // Cleanup mic if the modal closes/unmounts while still listening
+  useEffect(() => {
+    return () => {
+      shouldListenRef.current = false;
+      recognitionRef.current?.stop();
+    };
+  }, []);
+
+  // ── Voice recognition (Chrome/Edge only) — keeps listening until user stops it ──
   const startListening = () => {
     setErr("");
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -216,22 +411,50 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
     }
     const recognition = new SpeechRecognition();
     recognition.lang = "en-IN";
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = false;
 
     recognition.onstart = () => setListening(true);
-    recognition.onerror = () => { setListening(false); setErr("Error capturing voice, please try again"); };
-    recognition.onend = () => setListening(false);
+
+    recognition.onerror = (e) => {
+      // "no-speech" fires often during pauses — ignore it, auto-restart handles it
+      if (e.error !== "no-speech" && e.error !== "aborted") {
+        setErr("Error capturing voice, please try again");
+      }
+    };
+
+    recognition.onend = () => {
+      // Browser sometimes stops on its own after silence — restart unless user pressed Stop
+      if (shouldListenRef.current) {
+        try {
+          recognition.start();
+        } catch {
+          setListening(false);
+        }
+      } else {
+        setListening(false);
+      }
+    };
+
     recognition.onresult = (event) => {
-      const text = event.results[0][0].transcript;
-      setTranscript((prev) => (prev ? prev + " " + text : text));
+      let newText = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          newText += event.results[i][0].transcript + " ";
+        }
+      }
+      if (newText.trim()) {
+        setTranscript((prev) => (prev ? prev + " " + newText.trim() : newText.trim()));
+      }
     };
 
     recognitionRef.current = recognition;
+    shouldListenRef.current = true;
     recognition.start();
   };
 
   const stopListening = () => {
+    shouldListenRef.current = false;
     recognitionRef.current?.stop();
     setListening(false);
   };
@@ -458,10 +681,11 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
             borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
           }}>Cancel</button>
           <button onClick={handleGenerate} disabled={saving} style={{
+            display: "flex", alignItems: "center", gap: 8,
             background: t.accent, color: "#fff", border: "none", borderRadius: 10,
             padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: saving ? "not-allowed" : "pointer",
             opacity: saving ? 0.6 : 1,
-          }}>{saving ? "Saving..." : "⬇ Generate & Download PDF"}</button>
+          }}>{saving ? "Saving..." : (<><DownloadIcon size={14} /> Generate & Download PDF</>)}</button>
         </div>
       </div>
     </div>
@@ -472,6 +696,7 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
 export default function Orders() {
   const { t } = useTheme();
   const { loading, error, orders } = useOrdersData();
+  const { invoices } = useInvoicesData();
   const [refreshTick, setRefreshTick] = useState(0);
 
   const [search, setSearch] = useState("");
@@ -479,7 +704,7 @@ export default function Orders() {
   const [sortKey, setSortKey] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
-  const [showPastInvoices, setShowPastInvoices] = useState(false);
+  const [viewInvoice, setViewInvoice] = useState(null);
 
   const totalOrders = orders.length;
   const totalRevenue = orders.reduce((s, o) => (o.status !== "Cancelled" ? s + (Number(o.amount) || 0) : s), 0);
@@ -537,6 +762,16 @@ export default function Orders() {
     transition: "border-color 0.2s",
   };
 
+  const iconBtnStyle = {
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    fontSize: 14,
+    padding: "4px 5px",
+    lineHeight: 1,
+    borderRadius: 6,
+  };
+
   const SortArrow = ({ col }) => {
     if (sortKey !== col) return <span style={{ opacity: 0.3, marginLeft: 4 }}>↕</span>;
     return <span style={{ marginLeft: 4, color: t.accent }}>{sortDir === "asc" ? "↑" : "↓"}</span>;
@@ -559,8 +794,8 @@ export default function Orders() {
       {showInvoiceModal && (
         <CreateInvoiceModal t={t} onClose={() => setShowInvoiceModal(false)} onSaved={() => setRefreshTick((n) => n + 1)} />
       )}
-      {showPastInvoices && (
-        <PastInvoicesModal t={t} onClose={() => setShowPastInvoices(false)} />
+      {viewInvoice && (
+        <InvoiceViewModal t={t} invoice={viewInvoice} onClose={() => setViewInvoice(null)} />
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -572,16 +807,12 @@ export default function Orders() {
               fontFamily: "'Syne', sans-serif", fontSize: "28px", fontWeight: 900,
               color: t.textPrimary, letterSpacing: "-0.03em",
               transition: "color 0.25s ease",
-            }}>Orders</h1>
+            }}>Billing</h1>
             <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>
               {error ? error : "Track, filter, and manage all customer orders"}
             </p>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button onClick={() => setShowPastInvoices(true)} style={{
-              background: "transparent", color: t.accent, border: `1.5px solid ${t.accent}`, borderRadius: 10,
-              padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
-            }}>📄 Past Invoices</button>
             <button onClick={() => setShowInvoiceModal(true)} style={{
               background: t.accent, color: "#fff", border: "none", borderRadius: 10,
               padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
@@ -649,61 +880,89 @@ export default function Orders() {
                       {label}<SortArrow col={key} />
                     </th>
                   ))}
+                  <th style={{
+                    textAlign: "left", paddingBottom: "10px",
+                    fontSize: "10px", fontWeight: 600,
+                    textTransform: "uppercase", letterSpacing: "0.08em",
+                    color: t.textMuted, fontFamily: "'DM Sans', sans-serif",
+                    whiteSpace: "nowrap", cursor: "default",
+                  }}>Invoice</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: "center", padding: "40px 0", color: t.textMuted, fontSize: "13px" }}>
+                    <td colSpan={8} style={{ textAlign: "center", padding: "40px 0", color: t.textMuted, fontSize: "13px" }}>
                       Loading orders…
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{
+                    <td colSpan={8} style={{
                       textAlign: "center", padding: "40px 0",
                       color: t.textMuted, fontSize: "13px",
                     }}>No orders match your filters.</td>
                   </tr>
-                ) : filtered.map((order, i) => (
-                  <tr
-                    key={order.orderId || order._id || i}
-                    style={{
-                      borderBottom: i < filtered.length - 1
-                        ? `1px solid ${t.borderLight ?? t.border}` : "none",
-                    }}
-                  >
-                    <td style={{ padding: "10px 16px 10px 0", fontFamily: "monospace", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>
-                      {order.orderId}
-                    </td>
-                    <td style={{ padding: "10px 16px 10px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>
-                      {order.customer}
-                    </td>
-                    <td style={{ padding: "10px 16px 10px 0", fontSize: "12px", color: t.textMuted, whiteSpace: "nowrap" }}>
-                      {order.product}
-                    </td>
-                    <td style={{ padding: "10px 16px 10px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif" }}>
-                      {order.qty ?? 1}
-                    </td>
-                    <td style={{ padding: "10px 16px 10px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>
-                      {inr(order.amount)}
-                    </td>
-                    <td style={{ padding: "10px 16px 10px 0" }}>
-                      <span style={{
-                        fontSize: "10px", fontWeight: 600,
-                        padding: "3px 9px", borderRadius: "99px",
-                        color: (statusStyle[order.status] || statusStyle.Pending).color,
-                        background: (statusStyle[order.status] || statusStyle.Pending).bg,
-                        whiteSpace: "nowrap",
-                      }}>
-                        {order.status || "Pending"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "10px 0", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>
-                      {formatDate(getOrderDate(order))}
-                    </td>
-                  </tr>
-                ))}
+                ) : filtered.map((order, i) => {
+                  const inv = findInvoiceForOrder(order, invoices);
+                  return (
+                    <tr
+                      key={order.orderId || order._id || i}
+                      style={{
+                        borderBottom: i < filtered.length - 1
+                          ? `1px solid ${t.borderLight ?? t.border}` : "none",
+                      }}
+                    >
+                      <td style={{ padding: "10px 16px 10px 0", fontFamily: "monospace", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>
+                        {order.orderId}
+                      </td>
+                      <td style={{ padding: "10px 16px 10px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>
+                        {order.customer}
+                      </td>
+                      <td style={{ padding: "10px 16px 10px 0", fontSize: "12px", color: t.textMuted, whiteSpace: "nowrap" }}>
+                        {order.product}
+                      </td>
+                      <td style={{ padding: "10px 16px 10px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif" }}>
+                        {order.qty ?? 1}
+                      </td>
+                      <td style={{ padding: "10px 16px 10px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>
+                        {inr(order.amount)}
+                      </td>
+                      <td style={{ padding: "10px 16px 10px 0" }}>
+                        <span style={{
+                          fontSize: "10px", fontWeight: 600,
+                          padding: "3px 9px", borderRadius: "99px",
+                          color: (statusStyle[order.status] || statusStyle.Pending).color,
+                          background: (statusStyle[order.status] || statusStyle.Pending).bg,
+                          whiteSpace: "nowrap",
+                        }}>
+                          {order.status || "Pending"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>
+                        {formatDate(getOrderDate(order))}
+                      </td>
+                      <td style={{ padding: "10px 0", whiteSpace: "nowrap" }}>
+                        {inv ? (
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button
+                              onClick={() => setViewInvoice(inv)}
+                              title="View invoice"
+                              style={{ ...iconBtnStyle, color: t.accent }}
+                            ><EyeIcon /></button>
+                            <button
+                              onClick={() => downloadInvoicePDF(inv)}
+                              title="Download invoice"
+                              style={{ ...iconBtnStyle, color: t.accent }}
+                            ><DownloadIcon /></button>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: "11px", color: t.textMuted }}>—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

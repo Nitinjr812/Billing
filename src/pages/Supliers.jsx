@@ -1,140 +1,80 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
 
-// ─── DUMMY DATA ───────────────────────────────────────────────────────────────
-const SUPPLIERS = [
-    {
-        id: "SUP-001",
-        name: "TechSource India",
-        category: "Electronics",
-        contact: "Ankit Joshi",
-        email: "ankit@techsource.in",
-        phone: "+91 98200 11234",
-        location: "Mumbai, MH",
-        status: "Active",
-        totalOrders: 142,
-        totalValue: "₹18,42,000",
-        lastOrder: "10 May 2024",
-        rating: 4.8,
-        paymentTerms: "Net 30",
-        outstanding: "₹2,40,000",
-    },
-    {
-        id: "SUP-002",
-        name: "FabricHub Pvt Ltd",
-        category: "Apparel",
-        contact: "Meena Rao",
-        email: "meena@fabrichub.in",
-        phone: "+91 90000 56789",
-        location: "Bengaluru, KA",
-        status: "Active",
-        totalOrders: 98,
-        totalValue: "₹9,85,500",
-        lastOrder: "08 May 2024",
-        rating: 4.5,
-        paymentTerms: "Net 15",
-        outstanding: "₹1,05,000",
-    },
-    {
-        id: "SUP-003",
-        name: "HomeDecor Wholesale",
-        category: "Home Goods",
-        contact: "Ramesh Gupta",
-        email: "ramesh@homedecor.in",
-        phone: "+91 88001 22334",
-        location: "Delhi, DL",
-        status: "Active",
-        totalOrders: 76,
-        totalValue: "₹7,20,800",
-        lastOrder: "05 May 2024",
-        rating: 4.2,
-        paymentTerms: "Net 45",
-        outstanding: "₹84,000",
-    },
-    {
-        id: "SUP-004",
-        name: "GadgetWorld Supplies",
-        category: "Electronics",
-        contact: "Pooja Nair",
-        email: "pooja@gadgetworld.in",
-        phone: "+91 77200 99100",
-        location: "Hyderabad, TS",
-        status: "On Hold",
-        totalOrders: 55,
-        totalValue: "₹6,60,000",
-        lastOrder: "28 Apr 2024",
-        rating: 3.9,
-        paymentTerms: "Net 30",
-        outstanding: "₹3,30,000",
-    },
-    {
-        id: "SUP-005",
-        name: "StyleCraft Textiles",
-        category: "Apparel",
-        contact: "Aryan Kapoor",
-        email: "aryan@stylecraft.in",
-        phone: "+91 99300 44512",
-        location: "Surat, GJ",
-        status: "Active",
-        totalOrders: 110,
-        totalValue: "₹11,20,000",
-        lastOrder: "09 May 2024",
-        rating: 4.6,
-        paymentTerms: "Net 20",
-        outstanding: "₹60,000",
-    },
-    {
-        id: "SUP-006",
-        name: "UrbanFurnish Co.",
-        category: "Home Goods",
-        contact: "Sunita Sharma",
-        email: "sunita@urbanfurnish.in",
-        phone: "+91 85100 67823",
-        location: "Pune, MH",
-        status: "Inactive",
-        totalOrders: 34,
-        totalValue: "₹3,40,000",
-        lastOrder: "14 Mar 2024",
-        rating: 3.5,
-        paymentTerms: "Net 60",
-        outstanding: "₹0",
-    },
-    {
-        id: "SUP-007",
-        name: "Nexus Electronics",
-        category: "Electronics",
-        contact: "Karan Mehta",
-        email: "karan@nexuselec.in",
-        phone: "+91 91500 33210",
-        location: "Chennai, TN",
-        status: "Active",
-        totalOrders: 89,
-        totalValue: "₹14,30,000",
-        lastOrder: "11 May 2024",
-        rating: 4.7,
-        paymentTerms: "Net 30",
-        outstanding: "₹1,80,000",
-    },
-    {
-        id: "SUP-008",
-        name: "WeaveMaster Mills",
-        category: "Apparel",
-        contact: "Divya Pillai",
-        email: "divya@weavemaster.in",
-        phone: "+91 93600 12980",
-        location: "Coimbatore, TN",
-        status: "Active",
-        totalOrders: 63,
-        totalValue: "₹5,67,000",
-        lastOrder: "07 May 2024",
-        rating: 4.3,
-        paymentTerms: "Net 15",
-        outstanding: "₹45,000",
-    },
-];
+const BACKEND = "https://billing-backend-tawny.vercel.app";
 
-const CATEGORIES = ["All", "Electronics", "Apparel", "Home Goods"];
 const STATUSES = ["All", "Active", "On Hold", "Inactive"];
+const FORM_STATUSES = ["Active", "On Hold", "Inactive"];
+const PAYMENT_TERMS_OPTIONS = ["Net 15", "Net 20", "Net 30", "Net 45", "Net 60"];
+
+// ─── helpers ────────────────────────────────────────────────────────────
+function inr(n) {
+  return "₹" + (Number(n) || 0).toLocaleString("en-IN");
+}
+
+function formatDate(raw) {
+  const d = raw ? new Date(raw) : null;
+  return d && !isNaN(d.getTime()) ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+}
+
+// Merge supplier master data with linked-product aggregates (real, derived)
+function enrichSuppliers(suppliers, products) {
+  return suppliers.map((s) => {
+    const linked = products.filter((p) => (p.supplier || "").toLowerCase() === s.name.toLowerCase());
+    const totalValue = linked.reduce((sum, p) => sum + (Number(p.price) || 0) * (Number(p.stock) || 0), 0);
+    const lastOrder = linked.reduce((latest, p) => {
+      const d = p.updatedAt ? new Date(p.updatedAt) : null;
+      if (!d) return latest;
+      return !latest || d > latest ? d : latest;
+    }, null);
+    return {
+      ...s,
+      id: s.supplierId,
+      linkedProductCount: linked.length,
+      totalValue,
+      lastOrder,
+    };
+  });
+}
+
+// ─── live suppliers hook ────────────────────────────────────────────────
+function useSuppliersData(pollMs = 60000) {
+  const [state, setState] = useState({ loading: true, error: null, suppliers: [] });
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const [supRes, prodRes] = await Promise.all([
+          fetch(`${BACKEND}/api/suppliers`),
+          fetch(`${BACKEND}/api/products`),
+        ]);
+        if (!supRes.ok || !prodRes.ok) throw new Error("Request failed");
+        const [suppliers, products] = await Promise.all([supRes.json(), prodRes.json()]);
+        if (!cancelled) {
+          setState({
+            loading: false,
+            error: null,
+            suppliers: enrichSuppliers(
+              Array.isArray(suppliers) ? suppliers : [],
+              Array.isArray(products) ? products : []
+            ),
+          });
+        }
+      } catch (err) {
+        if (!cancelled) setState((s) => ({ ...s, loading: false, error: "Live supplier data unavailable right now." }));
+      }
+    }
+
+    load();
+    const interval = setInterval(load, pollMs);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [pollMs, refreshTick]);
+
+  return { ...state, refresh: () => setRefreshTick((n) => n + 1) };
+}
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function StarRating({ rating, t }) {
@@ -152,7 +92,7 @@ function StarRating({ rating, t }) {
                 </span>
             ))}
             <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "2px" }}>
-                {rating}
+                {rating || 0}
             </span>
         </div>
     );
@@ -208,9 +148,172 @@ function CategoryBadge({ category, t }) {
     );
 }
 
+// ─── ADD / EDIT SUPPLIER MODAL ─────────────────────────────────────────────
+function SupplierFormModal({ initial, onClose, onSaved, existingCategories, t }) {
+  const isEdit = !!initial;
+  const [name, setName] = useState(initial?.name || "");
+  const [category, setCategory] = useState(initial?.category || "");
+  const [contact, setContact] = useState(initial?.contact || "");
+  const [email, setEmail] = useState(initial?.email || "");
+  const [phone, setPhone] = useState(initial?.phone || "");
+  const [location, setLocation] = useState(initial?.location || "");
+  const [status, setStatus] = useState(initial?.status || "Active");
+  const [paymentTerms, setPaymentTerms] = useState(initial?.paymentTerms || "Net 30");
+  const [rating, setRating] = useState(initial?.rating ?? 0);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const inputStyle = {
+    width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
+    border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 12px",
+    fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", outline: "none",
+  };
+  const labelStyle = { fontSize: 11, color: t.textMuted, display: "block", marginBottom: 4 };
+
+  const handleSave = async () => {
+    setErr("");
+    if (!name.trim()) return setErr("Supplier name is required");
+    if (!category.trim()) return setErr("Category is required");
+    if (!contact.trim()) return setErr("Contact person is required");
+
+    setSaving(true);
+    try {
+      const payload = { name, category, contact, email, phone, location, status, paymentTerms, rating: Number(rating) };
+      const url = isEdit ? `${BACKEND}/api/suppliers/${initial._id}` : `${BACKEND}/api/suppliers`;
+      const method = isEdit ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not save supplier");
+      onSaved?.();
+      onClose();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16,
+      overflowY: "auto",
+    }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16,
+        padding: 24, width: "100%", maxWidth: 480, display: "flex", flexDirection: "column",
+        gap: 14, maxHeight: "90vh", overflowY: "auto",
+      }}>
+        <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 20, color: t.textPrimary, margin: 0 }}>
+          {isEdit ? "Edit Supplier" : "Add Supplier"}
+        </h3>
+
+        {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>{err}</p>}
+
+        <div>
+          <label style={labelStyle}>Supplier Name *</label>
+          <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="TechSource India" />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Category</label>
+            <input
+              style={inputStyle}
+              list="supplier-category-options"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="Type or pick a category…"
+            />
+            <datalist id="supplier-category-options">
+              {existingCategories.map((c) => <option key={c} value={c} />)}
+            </datalist>
+          </div>
+          <div>
+            <label style={labelStyle}>Status</label>
+            <select style={{ ...inputStyle, cursor: "pointer" }} value={status} onChange={(e) => setStatus(e.target.value)}>
+              {FORM_STATUSES.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Contact Person *</label>
+          <input style={inputStyle} value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Ankit Joshi" />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Email</label>
+            <input style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ankit@techsource.in" />
+          </div>
+          <div>
+            <label style={labelStyle}>Phone</label>
+            <input style={inputStyle} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98200 11234" />
+          </div>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Location</label>
+          <input style={inputStyle} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Mumbai, MH" />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Payment Terms</label>
+            <select style={{ ...inputStyle, cursor: "pointer" }} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)}>
+              {PAYMENT_TERMS_OPTIONS.map((p) => <option key={p}>{p}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Rating (0–5)</label>
+            <input type="number" min="0" max="5" step="0.1" style={inputStyle} value={rating} onChange={(e) => setRating(e.target.value)} />
+          </div>
+        </div>
+
+        <p style={{ fontSize: 11, color: t.textMuted, margin: "4px 0 0" }}>
+          Tip: tag your products with this exact supplier name in the Stocks page to see real Total Orders / Total Value here.
+        </p>
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+          <button onClick={onClose} style={{
+            background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
+            borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{
+            background: t.accent, color: "#fff", border: "none", borderRadius: 10,
+            padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: saving ? "not-allowed" : "pointer",
+            opacity: saving ? 0.6 : 1,
+          }}>{saving ? "Saving..." : isEdit ? "Save Changes" : "Add Supplier"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── SUPPLIER DETAIL DRAWER ───────────────────────────────────────────────────
-function SupplierDrawer({ supplier, onClose, t }) {
+function SupplierDrawer({ supplier, onClose, onEdit, onDeleted, t }) {
+    const [deleting, setDeleting] = useState(false);
     if (!supplier) return null;
+
+    const handleDelete = async () => {
+      if (!window.confirm(`Delete ${supplier.name}? This cannot be undone.`)) return;
+      setDeleting(true);
+      try {
+        const res = await fetch(`${BACKEND}/api/suppliers/${supplier._id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Could not delete supplier");
+        onDeleted?.();
+        onClose();
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        setDeleting(false);
+      }
+    };
 
     return (
         <>
@@ -282,12 +385,12 @@ function SupplierDrawer({ supplier, onClose, t }) {
                     </button>
                 </div>
 
-                {/* Stats row */}
+                {/* Stats row — real, derived from linked products */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                     {[
-                        ["Total Orders", supplier.totalOrders],
-                        ["Total Value", supplier.totalValue],
-                        ["Outstanding", supplier.outstanding],
+                        ["Linked Products", supplier.linkedProductCount],
+                        ["Total Value", inr(supplier.totalValue)],
+                        ["Last Product Update", formatDate(supplier.lastOrder)],
                         ["Payment Terms", supplier.paymentTerms],
                     ].map(([label, val]) => (
                         <div key={label} style={{
@@ -327,10 +430,9 @@ function SupplierDrawer({ supplier, onClose, t }) {
                     }}>Contact Details</p>
                     {[
                         ["👤 Contact", supplier.contact],
-                        ["✉️ Email", supplier.email],
-                        ["📞 Phone", supplier.phone],
-                        ["📍 Location", supplier.location],
-                        ["🗓 Last Order", supplier.lastOrder],
+                        ["✉️ Email", supplier.email || "—"],
+                        ["📞 Phone", supplier.phone || "—"],
+                        ["📍 Location", supplier.location || "—"],
                     ].map(([label, val]) => (
                         <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start" }}>
                             <span style={{
@@ -348,21 +450,27 @@ function SupplierDrawer({ supplier, onClose, t }) {
 
                 {/* Action buttons */}
                 <div style={{ display: "flex", gap: "10px", marginTop: "auto", paddingTop: "8px" }}>
-                    <button style={{
-                        flex: 1, padding: "12px 10px", borderRadius: "10px",
-                        background: t.accent, color: "#fff", border: "none",
-                        fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
-                        cursor: "pointer", touchAction: "manipulation",
-                    }}>
-                        Create Order
-                    </button>
-                    <button style={{
-                        flex: 1, padding: "12px 10px", borderRadius: "10px",
-                        background: `${t.accent}12`, color: t.textPrimary, border: `1px solid ${t.border}`,
-                        fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "13px",
-                        cursor: "pointer", touchAction: "manipulation",
-                    }}>
+                    <button
+                        onClick={() => onEdit(supplier)}
+                        style={{
+                            flex: 1, padding: "12px 10px", borderRadius: "10px",
+                            background: t.accent, color: "#fff", border: "none",
+                            fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
+                            cursor: "pointer", touchAction: "manipulation",
+                        }}>
                         Edit Supplier
+                    </button>
+                    <button
+                        onClick={handleDelete}
+                        disabled={deleting}
+                        style={{
+                            flex: 1, padding: "12px 10px", borderRadius: "10px",
+                            background: `${t.red}12`, color: t.red, border: `1px solid ${t.red}40`,
+                            fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "13px",
+                            cursor: deleting ? "not-allowed" : "pointer", touchAction: "manipulation",
+                            opacity: deleting ? 0.6 : 1,
+                        }}>
+                        {deleting ? "Deleting..." : "Delete"}
                     </button>
                 </div>
             </div>
@@ -409,9 +517,11 @@ function SupplierCard({ supplier, onClick, t }) {
             {/* Badges */}
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
                 <CategoryBadge category={supplier.category} t={t} />
-                <span style={{ fontSize: "11px", color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
-                    📍 {supplier.location}
-                </span>
+                {supplier.location && (
+                  <span style={{ fontSize: "11px", color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+                      📍 {supplier.location}
+                  </span>
+                )}
             </div>
 
             {/* Stats row */}
@@ -421,10 +531,10 @@ function SupplierCard({ supplier, onClick, t }) {
                         fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "15px",
                         color: t.textPrimary, margin: 0,
                     }}>
-                        {supplier.totalValue}
+                        {inr(supplier.totalValue)}
                     </p>
                     <p style={{ fontSize: "10px", color: t.textMuted, margin: "2px 0 0" }}>
-                        {supplier.totalOrders} orders
+                        {supplier.linkedProductCount} products
                     </p>
                 </div>
                 <StarRating rating={supplier.rating} t={t} />
@@ -472,7 +582,7 @@ function SupplierRow({ supplier, onClick, t, isLast }) {
                         {supplier.contact}
                     </p>
                     <p style={{ fontSize: "11px", color: t.textMuted, margin: "1px 0 0" }}>
-                        {supplier.location}
+                        {supplier.location || "—"}
                     </p>
                 </div>
             </td>
@@ -481,10 +591,10 @@ function SupplierRow({ supplier, onClick, t, isLast }) {
                     fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px",
                     color: t.textPrimary, margin: 0,
                 }}>
-                    {supplier.totalValue}
+                    {inr(supplier.totalValue)}
                 </p>
                 <p style={{ fontSize: "10px", color: t.textMuted, margin: "1px 0 0" }}>
-                    {supplier.totalOrders} orders
+                    {supplier.linkedProductCount} products
                 </p>
             </td>
             <td style={{ padding: "14px 8px" }}>
@@ -553,7 +663,6 @@ const styles = `
   .sup-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .sup-cards { display: none; }
 
-  /* ── FIX: pill rows — horizontal scroll, no wrap ── */
   .sup-pill-row {
     display: flex;
     gap: 6px;
@@ -575,14 +684,12 @@ const styles = `
     .sup-table-wrap { display: none; }
     .sup-cards { display: flex; flex-direction: column; gap: 10px; }
 
-    /* Filter box: stack vertically on mobile */
     .sup-filter-box {
       flex-direction: column !important;
       align-items: stretch !important;
     }
     .sup-filter-count { margin-left: 0 !important; text-align: right; }
 
-    /* Each filter group becomes a full row */
     .sup-filter-group {
       display: flex;
       flex-direction: column;
@@ -601,12 +708,16 @@ const styles = `
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function Suppliers() {
     const { t } = useTheme();
+    const { loading, error, suppliers, refresh } = useSuppliersData();
+
     const [search, setSearch] = useState("");
     const [catFilter, setCatFilter] = useState("All");
     const [statusFilter, setStatusFilter] = useState("All");
     const [selected, setSelected] = useState(null);
+    const [showForm, setShowForm] = useState(false);
+    const [editTarget, setEditTarget] = useState(null);
 
-    const filtered = SUPPLIERS.filter((s) => {
+    const filtered = suppliers.filter((s) => {
         const matchSearch =
             s.name.toLowerCase().includes(search.toLowerCase()) ||
             s.id.toLowerCase().includes(search.toLowerCase()) ||
@@ -616,14 +727,47 @@ export default function Suppliers() {
         return matchSearch && matchCat && matchStatus;
     });
 
-    const activeCount = SUPPLIERS.filter((s) => s.status === "Active").length;
-    const totalValue = "₹76,65,300";
-    const outstandingTotal = "₹9,44,000";
+    const activeCount = suppliers.filter((s) => s.status === "Active").length;
+    const totalValue = suppliers.reduce((sum, s) => sum + (s.totalValue || 0), 0);
+    const ratedSuppliers = suppliers.filter((s) => s.rating > 0);
+    const avgRating = ratedSuppliers.length
+      ? (ratedSuppliers.reduce((sum, s) => sum + s.rating, 0) / ratedSuppliers.length).toFixed(1)
+      : "0.0";
+
+    // Real categories, derived from suppliers actually saved — grows as
+    // the shop owner types new ones in the Add/Edit Supplier form.
+    const knownCategories = [...new Set(suppliers.map((s) => s.category).filter(Boolean))].sort();
+    const categoryFilterOptions = ["All", ...knownCategories];
+
+    const openEdit = (supplier) => {
+        setSelected(null);
+        setEditTarget(supplier);
+        setShowForm(true);
+    };
+
+    const handleSaved = () => {
+        refresh();
+    };
 
     return (
         <>
             <style>{styles}</style>
-            <SupplierDrawer supplier={selected} onClose={() => setSelected(null)} t={t} />
+            <SupplierDrawer
+              supplier={selected}
+              onClose={() => setSelected(null)}
+              onEdit={openEdit}
+              onDeleted={refresh}
+              t={t}
+            />
+            {showForm && (
+              <SupplierFormModal
+                initial={editTarget}
+                onClose={() => { setShowForm(false); setEditTarget(null); }}
+                onSaved={handleSaved}
+                existingCategories={knownCategories}
+                t={t}
+              />
+            )}
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
@@ -643,26 +787,28 @@ export default function Suppliers() {
                             Suppliers
                         </h1>
                         <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
-                            Manage your vendor relationships and purchase history
+                            {error ? error : "Manage your vendor relationships"}
                         </p>
                     </div>
-                    <button style={{
-                        padding: "10px 18px", borderRadius: "10px",
-                        background: t.accent, color: "#fff", border: "none",
-                        fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
-                        cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
-                        touchAction: "manipulation", whiteSpace: "nowrap",
-                    }}>
+                    <button
+                        onClick={() => { setEditTarget(null); setShowForm(true); }}
+                        style={{
+                          padding: "10px 18px", borderRadius: "10px",
+                          background: t.accent, color: "#fff", border: "none",
+                          fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
+                          cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
+                          touchAction: "manipulation", whiteSpace: "nowrap",
+                        }}>
                         + Add Supplier
                     </button>
                 </div>
 
                 {/* KPI Row */}
                 <div className="sup-kpi-grid">
-                    <SummaryKpi label="Total Suppliers" value={SUPPLIERS.length} sub={`${activeCount} active`} trendDir="up" t={t} />
-                    <SummaryKpi label="Total Purchases" value={totalValue} sub="All time" trendDir="up" t={t} />
-                    <SummaryKpi label="Outstanding" value={outstandingTotal} sub="3 overdue" trendDir="down" t={t} />
-                    <SummaryKpi label="Avg. Rating" value="4.4 ★" sub="across all" trendDir="neu" t={t} />
+                    <SummaryKpi label="Total Suppliers" value={loading ? "…" : suppliers.length} sub={loading ? undefined : `${activeCount} active`} trendDir="up" t={t} />
+                    <SummaryKpi label="Total Value"     value={loading ? "…" : inr(totalValue)}   sub="from linked products" trendDir="up" t={t} />
+                    <SummaryKpi label="Avg. Rating"     value={loading ? "…" : `${avgRating} ★`}  sub="across rated suppliers" trendDir="neu" t={t} />
+                    <SummaryKpi label="On Hold"         value={loading ? "…" : suppliers.filter((s) => s.status === "On Hold").length} sub="needs review" trendDir="down" t={t} />
                 </div>
 
                 {/* Filters */}
@@ -680,16 +826,14 @@ export default function Suppliers() {
                         transition: "background 0.25s ease, border-color 0.25s ease",
                     }}
                 >
-                    {/* Search — FIXED: single fontSize: "16px" to prevent iOS zoom */}
                     <div style={{ position: "relative", flex: "1 1 80px", minWidth: 0 }}>
-                        
                         <input
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder="Search suppliers…"
                             style={{
                                 width: "100%",
-                                padding: "9px 12px 9px 34px",
+                                padding: "9px 12px 9px 12px",
                                 borderRadius: "10px",
                                 background: `${t.accent}08`,
                                 border: `1px solid ${t.border}`,
@@ -697,21 +841,17 @@ export default function Suppliers() {
                                 fontFamily: "'DM Sans', sans-serif",
                                 outline: "none",
                                 boxSizing: "border-box",
-                                fontSize: "16px", /* prevents iOS auto-zoom */
+                                fontSize: "16px",
                             }}
                         />
                     </div>
 
-                    {/* Category filter — FIXED: horizontally scrollable, no wrap */}
                     <div className="sup-filter-group">
-                        <span
-                            className="sup-filter-group-label"
-                            style={{ color: t.textMuted, fontFamily: "'DM Sans', sans-serif", display: "none" }}
-                        >
+                        <span className="sup-filter-group-label" style={{ color: t.textMuted, fontFamily: "'DM Sans', sans-serif", display: "none" }}>
                             Category
                         </span>
                         <div className="sup-pill-row">
-                            {CATEGORIES.map((c) => (
+                            {categoryFilterOptions.map((c) => (
                                 <button
                                     key={c}
                                     onClick={() => setCatFilter(c)}
@@ -732,12 +872,8 @@ export default function Suppliers() {
                         </div>
                     </div>
 
-                    {/* Status filter — FIXED: horizontally scrollable, no wrap */}
                     <div className="sup-filter-group">
-                        <span
-                            className="sup-filter-group-label"
-                            style={{ color: t.textMuted, fontFamily: "'DM Sans', sans-serif", display: "none" }}
-                        >
+                        <span className="sup-filter-group-label" style={{ color: t.textMuted, fontFamily: "'DM Sans', sans-serif", display: "none" }}>
                             Status
                         </span>
                         <div className="sup-pill-row">
@@ -762,7 +898,6 @@ export default function Suppliers() {
                         </div>
                     </div>
 
-                    {/* Count */}
                     <span
                         className="sup-filter-count"
                         style={{
@@ -771,7 +906,7 @@ export default function Suppliers() {
                             fontFamily: "'DM Sans', sans-serif",
                         }}
                     >
-                        {filtered.length} of {SUPPLIERS.length} suppliers
+                        {loading ? "Loading…" : `${filtered.length} of ${suppliers.length} suppliers`}
                     </span>
                 </div>
 
@@ -807,10 +942,16 @@ export default function Suppliers() {
                             </tr>
                         </thead>
                         <tbody>
-                            {filtered.length > 0 ? (
+                            {loading ? (
+                                <tr>
+                                    <td colSpan={7} style={{ padding: "48px 0", textAlign: "center", color: t.textMuted, fontSize: "13px" }}>
+                                        Loading suppliers…
+                                    </td>
+                                </tr>
+                            ) : filtered.length > 0 ? (
                                 filtered.map((s, i) => (
                                     <SupplierRow
-                                        key={s.id}
+                                        key={s._id || s.id}
                                         supplier={s}
                                         onClick={setSelected}
                                         t={t}
@@ -822,7 +963,7 @@ export default function Suppliers() {
                                     <td colSpan={7} style={{ padding: "48px 0", textAlign: "center" }}>
                                         <p style={{ fontSize: "32px", margin: "0 0 8px" }}>🔍</p>
                                         <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "16px", color: t.textPrimary, margin: 0 }}>No suppliers found</p>
-                                        <p style={{ fontSize: "12px", color: t.textMuted, margin: "4px 0 0" }}>Try adjusting your search or filters</p>
+                                        <p style={{ fontSize: "12px", color: t.textMuted, margin: "4px 0 0" }}>Try adjusting your search or filters, or add your first supplier</p>
                                     </td>
                                 </tr>
                             )}
@@ -832,9 +973,11 @@ export default function Suppliers() {
 
                 {/* ── Mobile Cards ── */}
                 <div className="sup-cards">
-                    {filtered.length > 0 ? (
+                    {loading ? (
+                        <p style={{ textAlign: "center", color: t.textMuted, fontSize: 13, padding: "24px 0" }}>Loading suppliers…</p>
+                    ) : filtered.length > 0 ? (
                         filtered.map((s) => (
-                            <SupplierCard key={s.id} supplier={s} onClick={setSelected} t={t} />
+                            <SupplierCard key={s._id || s.id} supplier={s} onClick={setSelected} t={t} />
                         ))
                     ) : (
                         <div style={{
@@ -843,7 +986,7 @@ export default function Suppliers() {
                         }}>
                             <p style={{ fontSize: "32px", margin: "0 0 8px" }}>🔍</p>
                             <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "16px", color: t.textPrimary, margin: 0 }}>No suppliers found</p>
-                            <p style={{ fontSize: "12px", color: t.textMuted, margin: "4px 0 0" }}>Try adjusting your search or filters</p>
+                            <p style={{ fontSize: "12px", color: t.textMuted, margin: "4px 0 0" }}>Try adjusting your search or filters, or add your first supplier</p>
                         </div>
                     )}
                 </div>

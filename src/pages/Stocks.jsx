@@ -1,33 +1,89 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
 
-// ─── DUMMY DATA ───────────────────────────────────────────────────────────────
-const STOCKS = [
-  { id: "SKU-001", name: "Prod-Alpha",  category: "Electronics", inStock: 420, reserved: 80,  sold: 1240, reorderAt: 100, reorderQty: 500, supplier: "TechCorp Ltd",    cost: "₹850",   lastRestock: "10 May" },
-  { id: "SKU-002", name: "Prod-Beta",   category: "Apparel",     inStock: 280, reserved: 40,  sold: 860,  reorderAt: 80,  reorderQty: 300, supplier: "FabriX Pvt",      cost: "₹390",   lastRestock: "08 May" },
-  { id: "SKU-003", name: "Prod-Gamma",  category: "Electronics", inStock: 610, reserved: 120, sold: 2100, reorderAt: 150, reorderQty: 600, supplier: "TechCorp Ltd",    cost: "₹2,100", lastRestock: "12 May" },
-  { id: "SKU-004", name: "Prod-Delta",  category: "Home Goods",  inStock: 42,  reserved: 18,  sold: 490,  reorderAt: 60,  reorderQty: 200, supplier: "HomeBase Co",     cost: "₹540",   lastRestock: "01 May" },
-  { id: "SKU-005", name: "Prod-Sigma",  category: "Apparel",     inStock: 380, reserved: 60,  sold: 730,  reorderAt: 100, reorderQty: 400, supplier: "FabriX Pvt",      cost: "₹1,050", lastRestock: "09 May" },
-  { id: "SKU-006", name: "Prod-Zeta",   category: "Home Goods",  inStock: 28,  reserved: 10,  sold: 310,  reorderAt: 50,  reorderQty: 150, supplier: "HomeBase Co",     cost: "₹1,400", lastRestock: "29 Apr" },
-  { id: "SKU-007", name: "Prod-Omega",  category: "Electronics", inStock: 0,   reserved: 0,   sold: 980,  reorderAt: 80,  reorderQty: 400, supplier: "TechCorp Ltd",    cost: "₹3,800", lastRestock: "20 Apr" },
-  { id: "SKU-008", name: "Prod-Lambda", category: "Apparel",     inStock: 815, reserved: 95,  sold: 1680, reorderAt: 200, reorderQty: 800, supplier: "FabriX Pvt",      cost: "₹210",   lastRestock: "11 May" },
-  { id: "SKU-009", name: "Prod-Theta",  category: "Home Goods",  inStock: 18,  reserved: 12,  sold: 420,  reorderAt: 40,  reorderQty: 180, supplier: "HomeBase Co",     cost: "₹620",   lastRestock: "25 Apr" },
-  { id: "SKU-010", name: "Prod-Kappa",  category: "Electronics", inStock: 0,   reserved: 0,   sold: 560,  reorderAt: 60,  reorderQty: 300, supplier: "TechCorp Ltd",    cost: "₹6,200", lastRestock: "18 Apr" },
-  { id: "SKU-011", name: "Prod-Phi",    category: "Apparel",     inStock: 330, reserved: 50,  sold: 920,  reorderAt: 100, reorderQty: 400, supplier: "StyleHouse",      cost: "₹280",   lastRestock: "07 May" },
-  { id: "SKU-012", name: "Prod-Psi",    category: "Home Goods",  inStock: 177, reserved: 30,  sold: 640,  reorderAt: 80,  reorderQty: 250, supplier: "HomeBase Co",     cost: "₹430",   lastRestock: "05 May" },
-];
-
+const BACKEND = "https://billing-backend-tawny.vercel.app";
 const CATEGORIES = ["All", "Electronics", "Apparel", "Home Goods"];
-const SUPPLIERS  = ["All", "TechCorp Ltd", "FabriX Pvt", "HomeBase Co", "StyleHouse"];
+const LOW_STOCK_THRESHOLD = 50; // matches /api/products/alerts
 
-function getStockStatus(inStock, reorderAt) {
-  if (inStock === 0)            return "Out of Stock";
-  if (inStock <= reorderAt)     return "Low Stock";
+// ─── helpers ────────────────────────────────────────────────────────────
+function getStockStatus(inStock) {
+  if (inStock === 0) return "Out of Stock";
+  if (inStock <= LOW_STOCK_THRESHOLD) return "Low Stock";
   return "In Stock";
 }
 
+function formatDate(raw) {
+  const d = raw ? new Date(raw) : null;
+  return d && !isNaN(d.getTime()) ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "—";
+}
+
+function inr(n) {
+  return "₹" + (Number(n) || 0).toLocaleString("en-IN");
+}
+
+// Build a "total sold" map keyed by lowercase product name from real orders
+function buildSoldMap(orders) {
+  const map = new Map();
+  orders.forEach((o) => {
+    if (o.status === "Cancelled") return;
+    const key = (o.product || "").toLowerCase();
+    const qty = Number(o.qty) || 1;
+    map.set(key, (map.get(key) || 0) + qty);
+  });
+  return map;
+}
+
+// ─── live stocks hook (real products + orders, no seed/dummy data) ────────
+function useStocksData(pollMs = 60000) {
+  const [state, setState] = useState({ loading: true, error: null, stocks: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const [productsRes, ordersRes] = await Promise.all([
+          fetch(`${BACKEND}/api/products`),
+          fetch(`${BACKEND}/api/orders`),
+        ]);
+        if (!productsRes.ok || !ordersRes.ok) throw new Error("Request failed");
+
+        const [products, orders] = await Promise.all([productsRes.json(), ordersRes.json()]);
+        const soldMap = buildSoldMap(Array.isArray(orders) ? orders : []);
+
+        const stocks = (Array.isArray(products) ? products : []).map((p) => ({
+          id: p.productId,
+          _mongoId: p._id,
+          name: p.name,
+          category: p.category,
+          inStock: p.stock,
+          sold: soldMap.get((p.name || "").toLowerCase()) || 0,
+          price: p.price,
+          growthPercent: p.growthPercent,
+          lastUpdated: p.updatedAt,
+        }));
+
+        if (!cancelled) setState({ loading: false, error: null, stocks });
+      } catch (err) {
+        if (!cancelled) {
+          setState((s) => ({ ...s, loading: false, error: "Live stock data unavailable right now." }));
+        }
+      }
+    }
+
+    load();
+    const interval = setInterval(load, pollMs);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [pollMs]);
+
+  return state;
+}
+
 function StockBar({ value, max, color }) {
-  const pct = Math.min((value / max) * 100, 100);
+  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   return (
     <div style={{ width: "100%", height: 6, borderRadius: 99, background: `${color}20`, overflow: "hidden" }}>
       <div style={{ width: `${pct}%`, height: "100%", borderRadius: 99, background: color, transition: "width 0.4s ease" }} />
@@ -58,31 +114,40 @@ function StatCard({ label, value, trend, trendDir, sub }) {
 // ─── STOCKS PAGE ──────────────────────────────────────────────────────────────
 export default function Stocks() {
   const { t } = useTheme();
+  const { loading, error, stocks } = useStocksData();
+
   const [search, setSearch]       = useState("");
   const [category, setCategory]   = useState("All");
-  const [supplier, setSupplier]   = useState("All");
   const [onlyLow, setOnlyLow]     = useState(false);
-  const [sortKey, setSortKey]     = useState("id");
+  const [sortKey, setSortKey]     = useState("name");
   const [sortDir, setSortDir]     = useState("asc");
 
-  const totalSKUs   = STOCKS.length;
-  const totalUnits  = STOCKS.reduce((s, i) => s + i.inStock, 0);
-  const needReorder = STOCKS.filter((i) => i.inStock <= i.reorderAt).length;
-  const outOfStock  = STOCKS.filter((i) => i.inStock === 0).length;
+  const totalSKUs   = stocks.length;
+  const totalUnits  = stocks.reduce((s, i) => s + (i.inStock || 0), 0);
+  const needReorder = stocks.filter((i) => i.inStock <= LOW_STOCK_THRESHOLD).length;
+  const outOfStock  = stocks.filter((i) => i.inStock === 0).length;
 
-  const filtered = STOCKS
+  const filtered = stocks
     .filter((s) => {
       const q = search.toLowerCase();
-      const matchSearch   = s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q) || s.supplier.toLowerCase().includes(q);
+      const matchSearch   = (s.name || "").toLowerCase().includes(q) || (s.id || "").toLowerCase().includes(q);
       const matchCategory = category === "All" || s.category === category;
-      const matchSupplier = supplier === "All" || s.supplier === supplier;
-      const matchLow      = !onlyLow || s.inStock <= s.reorderAt;
-      return matchSearch && matchCategory && matchSupplier && matchLow;
+      const matchLow      = !onlyLow || s.inStock <= LOW_STOCK_THRESHOLD;
+      return matchSearch && matchCategory && matchLow;
     })
     .sort((a, b) => {
-      let va = a[sortKey], vb = b[sortKey];
-      if (["inStock","reserved","sold","reorderAt","reorderQty"].includes(sortKey)) { va = Number(va); vb = Number(vb); }
-      else { va = String(va).toLowerCase(); vb = String(vb).toLowerCase(); }
+      if (["inStock", "sold", "price"].includes(sortKey)) {
+        const va = Number(a[sortKey]) || 0;
+        const vb = Number(b[sortKey]) || 0;
+        return sortDir === "asc" ? va - vb : vb - va;
+      }
+      if (sortKey === "lastUpdated") {
+        const va = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
+        const vb = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
+        return sortDir === "asc" ? va - vb : vb - va;
+      }
+      const va = String(a[sortKey] || "").toLowerCase();
+      const vb = String(b[sortKey] || "").toLowerCase();
       if (va < vb) return sortDir === "asc" ? -1 : 1;
       if (va > vb) return sortDir === "asc" ?  1 : -1;
       return 0;
@@ -110,7 +175,7 @@ export default function Stocks() {
     return <span style={{ marginLeft: 4, color: t.accent }}>{sortDir === "asc" ? "↑" : "↓"}</span>;
   };
 
-  const maxStock = Math.max(...STOCKS.map((s) => s.inStock + s.reserved));
+  const maxStock = stocks.length ? Math.max(...stocks.map((s) => s.inStock || 0), 1) : 1;
 
   return (
     <>
@@ -128,14 +193,16 @@ export default function Stocks() {
 
         <div>
           <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "28px", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", transition: "color 0.25s ease" }}>Stocks</h1>
-          <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>Monitor stock levels, reorder points, and supplier info</p>
+          <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>
+            {error ? error : "Monitor stock levels and reorder points"}
+          </p>
         </div>
 
         <div className="stk-stat-grid">
-          <StatCard label="Total SKUs"    value={totalSKUs}                      sub="being tracked" />
-          <StatCard label="Total Units"   value={totalUnits.toLocaleString("en-IN")} sub="in warehouse" />
-          <StatCard label="Need Reorder"  value={needReorder} trend={`${needReorder} SKUs`} trendDir="neu" sub="at/below threshold" />
-          <StatCard label="Out of Stock"  value={outOfStock}  trend={`${outOfStock} SKUs`}  trendDir="down" sub="zero inventory" />
+          <StatCard label="Total SKUs"    value={loading ? "…" : totalSKUs}                      sub="being tracked" />
+          <StatCard label="Total Units"   value={loading ? "…" : totalUnits.toLocaleString("en-IN")} sub="in warehouse" />
+          <StatCard label="Need Reorder"  value={loading ? "…" : needReorder} trend={loading ? undefined : `${needReorder} SKUs`} trendDir="neu" sub={`≤ ${LOW_STOCK_THRESHOLD} units`} />
+          <StatCard label="Out of Stock"  value={loading ? "…" : outOfStock}  trend={loading ? undefined : `${outOfStock} SKUs`}  trendDir="down" sub="zero inventory" />
         </div>
 
         <div style={{
@@ -145,12 +212,9 @@ export default function Stocks() {
         }}>
           {/* Filters */}
           <div className="stk-filters">
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search SKU, product, supplier…" style={{ ...inputStyle, flex: "1 1 200px", minWidth: "160px" }} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search product or SKU…" style={{ ...inputStyle, flex: "1 1 200px", minWidth: "160px" }} />
             <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
               {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-            </select>
-            <select value={supplier} onChange={(e) => setSupplier(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-              {SUPPLIERS.map((s) => <option key={s}>{s}</option>)}
             </select>
 
             {/* Low stock toggle */}
@@ -171,7 +235,9 @@ export default function Stocks() {
               Low stock only
             </label>
 
-            <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "auto" }}>{filtered.length} of {STOCKS.length} SKUs</span>
+            <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "auto" }}>
+              {loading ? "Loading…" : `${filtered.length} of ${stocks.length} SKUs`}
+            </span>
           </div>
 
           {/* Table */}
@@ -180,17 +246,14 @@ export default function Stocks() {
               <thead>
                 <tr style={{ borderBottom: `1px solid ${t.border}` }}>
                   {[
-                    { key: "id",         label: "SKU"        },
-                    { key: "name",       label: "Product"    },
-                    { key: "category",   label: "Category"   },
-                    { key: "inStock",    label: "In Stock"   },
-                    { key: "reserved",   label: "Reserved"   },
-                    { key: "sold",       label: "Total Sold" },
-                    { key: "reorderAt",  label: "Reorder At" },
-                    { key: "supplier",   label: "Supplier"   },
-                    { key: "cost",       label: "Unit Cost"  },
-                    { key: "lastRestock",label: "Restocked"  },
-                    { key: "_status",    label: "Status"     },
+                    { key: "id",          label: "SKU"          },
+                    { key: "name",        label: "Product"      },
+                    { key: "category",    label: "Category"     },
+                    { key: "inStock",     label: "In Stock"     },
+                    { key: "sold",        label: "Total Sold"   },
+                    { key: "price",       label: "Price"        },
+                    { key: "lastUpdated", label: "Last Updated" },
+                    { key: "_status",     label: "Status"       },
                   ].map(({ key, label }) => (
                     <th key={key} onClick={() => key !== "_status" && handleSort(key)} style={{
                       textAlign: "left", paddingBottom: "10px", fontSize: "10px", fontWeight: 600,
@@ -204,26 +267,25 @@ export default function Stocks() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
-                  <tr><td colSpan={11} style={{ textAlign: "center", padding: "40px 0", color: t.textMuted, fontSize: "13px" }}>No stocks match your filters.</td></tr>
+                {loading ? (
+                  <tr><td colSpan={8} style={{ textAlign: "center", padding: "40px 0", color: t.textMuted, fontSize: "13px" }}>Loading stock data…</td></tr>
+                ) : filtered.length === 0 ? (
+                  <tr><td colSpan={8} style={{ textAlign: "center", padding: "40px 0", color: t.textMuted, fontSize: "13px" }}>No stocks match your filters.</td></tr>
                 ) : filtered.map((s, i) => {
-                  const stockStatus = getStockStatus(s.inStock, s.reorderAt);
-                  const barColor = s.inStock === 0 ? t.red : s.inStock <= s.reorderAt ? t.orange : t.green;
+                  const stockStatus = getStockStatus(s.inStock);
+                  const barColor = s.inStock === 0 ? t.red : s.inStock <= LOW_STOCK_THRESHOLD ? t.orange : t.green;
                   return (
-                    <tr key={s.id} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${t.borderLight ?? t.border}` : "none" }}>
+                    <tr key={s.id || s._mongoId} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${t.borderLight ?? t.border}` : "none" }}>
                       <td style={{ padding: "10px 16px 10px 0", fontFamily: "monospace", fontSize: "11px", color: t.textMuted }}>{s.id}</td>
                       <td style={{ padding: "10px 16px 10px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>{s.name}</td>
                       <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted }}>{s.category}</td>
                       <td style={{ padding: "10px 16px 10px 0", minWidth: 90 }}>
-                        <div style={{ fontWeight: 700, color: barColor, fontFamily: "'Syne', sans-serif", marginBottom: 4 }}>{s.inStock.toLocaleString("en-IN")}</div>
-                        <StockBar value={s.inStock} max={maxStock} color={barColor} />
+                        <div style={{ fontWeight: 700, color: barColor, fontFamily: "'Syne', sans-serif", marginBottom: 4 }}>{(s.inStock || 0).toLocaleString("en-IN")}</div>
+                        <StockBar value={s.inStock || 0} max={maxStock} color={barColor} />
                       </td>
-                      <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted }}>{s.reserved}</td>
-                      <td style={{ padding: "10px 16px 10px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'Syne', sans-serif" }}>{s.sold.toLocaleString("en-IN")}</td>
-                      <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted }}>{s.reorderAt}</td>
-                      <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>{s.supplier}</td>
-                      <td style={{ padding: "10px 16px 10px 0", fontWeight: 600, color: t.textPrimary }}>{s.cost}</td>
-                      <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>{s.lastRestock}</td>
+                      <td style={{ padding: "10px 16px 10px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'Syne', sans-serif" }}>{(s.sold || 0).toLocaleString("en-IN")}</td>
+                      <td style={{ padding: "10px 16px 10px 0", fontWeight: 600, color: t.textPrimary, whiteSpace: "nowrap" }}>{inr(s.price)}</td>
+                      <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap" }}>{formatDate(s.lastUpdated)}</td>
                       <td style={{ padding: "10px 0" }}>
                         <span style={{ fontSize: "10px", fontWeight: 600, padding: "3px 9px", borderRadius: "99px", color: stockStatusStyle[stockStatus].color, background: stockStatusStyle[stockStatus].bg, whiteSpace: "nowrap" }}>
                           {stockStatus}

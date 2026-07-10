@@ -58,7 +58,7 @@ function AppInner() {
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/subscription" element={<Subscription />} />
                 <Route path="/inventory" element={<Inventory />} />
-                <Route path="/orders" element={<Orders />} />
+                <Route path="/billing" element={<Orders />} />
                 <Route path="/customers" element={<Customers />} />
                 <Route path="/stocks" element={<Stocks />} />
                 <Route path="/reports" element={<Reports />} />

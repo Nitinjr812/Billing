@@ -7,7 +7,7 @@ import { useNotifications } from "../components/NotificationContext";
 export const NAV_ITEMS = [
   { label: "Dashboard",     icon: "⬡", path: "/dashboard"     },
   { label: "Inventory",     icon: "◫", path: "/inventory"     },
-  { label: "Orders",        icon: "◳", path: "/orders"        },
+  { label: "Billing",        icon: "◳", path: "/Billing"        },
   { label: "Customers",     icon: "◉", path: "/customers"     },
   { label: "Suppliers",     icon: "🏭", path: "/suppliers"    },  
   { label: "Stocks",        icon: "◈", path: "/stocks"        },
