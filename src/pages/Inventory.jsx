@@ -1,15 +1,39 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useTheme } from "../components/ThemeContext";
 import VoiceAddProduct from "../components/VoiceAddProduct";
 
 const BACKEND = "https://billing-backend-tawny.vercel.app";
-const CATEGORIES = ["Electronics", "Apparel", "Home Goods"];
 const STATUSES = ["All", "In Stock", "Low Stock", "Out of Stock"];
+// Starter suggestions shown even before any products exist. Once products
+// are added, real categories (ranked by how often they're used) take over.
+const DEFAULT_CATEGORY_SUGGESTIONS = ["Electronics", "Apparel", "Home Goods"];
 
 function getStatus(stock) {
   if (stock === 0) return "Out of Stock";
   if (stock < 50) return "Low Stock";
   return "In Stock";
+}
+
+// Build a list of categories sorted by how frequently they're used
+// (most-used first), falling back to the starter suggestions.
+function useCategorySuggestions(products) {
+  return useMemo(() => {
+    const counts = new Map();
+    (products || []).forEach((p) => {
+      if (!p.category) return;
+      const key = p.category.trim();
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const fromProducts = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name);
+
+    const merged = [...fromProducts];
+    DEFAULT_CATEGORY_SUGGESTIONS.forEach((c) => {
+      if (!merged.some((m) => m.toLowerCase() === c.toLowerCase())) merged.push(c);
+    });
+    return merged;
+  }, [products]);
 }
 
 // ─── STAT CARD ────────────────────────────────────────────────────────────
@@ -35,8 +59,8 @@ function StatCard({ label, value, trend, trendDir, sub }) {
 }
 
 // ─── ADD PRODUCT MODAL ─────────────────────────────────────────────────────
-function AddProductModal({ onClose, onAdded, t }) {
-  const [form, setForm] = useState({ productId: "", name: "", category: "Electronics", stock: "", price: "", growthPercent: "0" });
+function AddProductModal({ onClose, onAdded, t, existingProducts, categorySuggestions }) {
+  const [form, setForm] = useState({ productId: "", name: "", category: "", stock: "", price: "", growthPercent: "0" });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
@@ -44,9 +68,17 @@ function AddProductModal({ onClose, onAdded, t }) {
 
   const handleSubmit = async () => {
     setErr("");
-    if (!form.productId || !form.name || !form.stock || !form.price) {
-      return setErr("Product ID, Name, Stock and Price is mandatory");
+    if (!form.productId || !form.name || !form.category.trim() || !form.stock || !form.price) {
+      return setErr("Product ID, Name, Category, Stock and Price is mandatory");
     }
+
+    const dupe = existingProducts.find(
+      (p) => p.name.trim().toLowerCase() === form.name.trim().toLowerCase()
+    );
+    if (dupe) {
+      return setErr(`"${form.name}" already exists (SKU: ${dupe.productId}). Edit it instead using the ✎ button.`);
+    }
+
     setSaving(true);
     try {
       const res = await fetch(`${BACKEND}/api/products`, {
@@ -55,7 +87,7 @@ function AddProductModal({ onClose, onAdded, t }) {
         body: JSON.stringify({
           productId: form.productId,
           name: form.name,
-          category: form.category,
+          category: form.category.trim(),
           stock: Number(form.stock),
           price: Number(form.price),
           growthPercent: Number(form.growthPercent) || 0,
@@ -100,9 +132,16 @@ function AddProductModal({ onClose, onAdded, t }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
             <label style={{ fontSize: 11, color: t.textMuted }}>Category</label>
-            <select style={{ ...inputStyle, cursor: "pointer" }} value={form.category} onChange={set("category")}>
-              {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-            </select>
+            <input
+              style={inputStyle}
+              list="category-suggestions"
+              value={form.category}
+              onChange={set("category")}
+              placeholder="Type or pick a category"
+            />
+            <datalist id="category-suggestions">
+              {categorySuggestions.map((c) => <option key={c} value={c} />)}
+            </datalist>
           </div>
           <div>
             <label style={{ fontSize: 11, color: t.textMuted }}>Growth %</label>
@@ -138,12 +177,145 @@ function AddProductModal({ onClose, onAdded, t }) {
   );
 }
 
+// ─── EDIT PRODUCT MODAL ─────────────────────────────────────────────────────
+function EditProductModal({ product, onClose, onSaved, t, existingProducts, categorySuggestions }) {
+  const [form, setForm] = useState({
+    name: product.name,
+    category: product.category,
+    stock: String(product.stock),
+    price: String(product.price),
+    growthPercent: String(product.growthPercent ?? 0),
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const handleSubmit = async () => {
+    setErr("");
+    if (!form.name || !form.category.trim() || form.stock === "" || form.price === "") {
+      return setErr("Name, Category, Stock and Price is mandatory");
+    }
+
+    const dupe = existingProducts.find(
+      (p) => p._id !== product._id && p.name.trim().toLowerCase() === form.name.trim().toLowerCase()
+    );
+    if (dupe) {
+      return setErr(`"${form.name}" already exists (SKU: ${dupe.productId}).`);
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch(`${BACKEND}/api/products/${product._id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          category: form.category.trim(),
+          stock: Number(form.stock),
+          price: Number(form.price),
+          growthPercent: Number(form.growthPercent) || 0,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Product update nahi hua");
+      onSaved();
+      onClose();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputStyle = {
+    width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
+    border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 12px",
+    fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", outline: "none",
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16,
+    }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16,
+        padding: 24, width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 12,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 18, color: t.textPrimary, margin: 0 }}>Edit Product</h3>
+          <span style={{ fontFamily: "monospace", fontSize: 11, color: t.textMuted }}>{product.productId}</span>
+        </div>
+
+        <div>
+          <label style={{ fontSize: 11, color: t.textMuted }}>Name</label>
+          <input style={inputStyle} value={form.name} onChange={set("name")} placeholder="Product name" />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={{ fontSize: 11, color: t.textMuted }}>Category</label>
+            <input
+              style={inputStyle}
+              list="category-suggestions-edit"
+              value={form.category}
+              onChange={set("category")}
+              placeholder="Type or pick a category"
+            />
+            <datalist id="category-suggestions-edit">
+              {categorySuggestions.map((c) => <option key={c} value={c} />)}
+            </datalist>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: t.textMuted }}>Growth %</label>
+            <input style={inputStyle} type="number" value={form.growthPercent} onChange={set("growthPercent")} />
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={{ fontSize: 11, color: t.textMuted }}>Stock (Qty)</label>
+            <input style={inputStyle} type="number" value={form.stock} onChange={set("stock")} placeholder="100" />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: t.textMuted }}>Price (₹)</label>
+            <input style={inputStyle} type="number" value={form.price} onChange={set("price")} placeholder="999" />
+          </div>
+        </div>
+
+        {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>❌ {err}</p>}
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+          <button onClick={onClose} style={{
+            background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
+            borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}>Cancel</button>
+          <button onClick={handleSubmit} disabled={saving} style={{
+            background: t.accent, color: "#fff", border: "none", borderRadius: 10,
+            padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: saving ? "not-allowed" : "pointer",
+            opacity: saving ? 0.6 : 1,
+          }}>{saving ? "Saving..." : "Save Changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Icon ───────────────────────────────────────────────────────────────
+function EditIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    </svg>
+  );
+}
+
 // ─── INVENTORY PAGE ────────────────────────────────────────────────────────
 export default function Inventory() {
   const { t } = useTheme();
   const [products, setProducts] = useState(null);
   const [loadErr, setLoadErr] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [editProduct, setEditProduct] = useState(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [status, setStatus] = useState("All");
@@ -159,6 +331,8 @@ export default function Inventory() {
 
   useEffect(() => { loadProducts(); }, []);
 
+  const categorySuggestions = useCategorySuggestions(products);
+
   if (!products) {
     return (
       <div style={{ padding: 40, textAlign: "center", color: t.textMuted, fontSize: 13 }}>
@@ -168,6 +342,9 @@ export default function Inventory() {
   }
 
   const withStatus = products.map((p) => ({ ...p, status: getStatus(p.stock) }));
+
+  // Categories that actually exist in the data right now, for the filter dropdown.
+  const filterCategories = [...new Set(withStatus.map((p) => p.category).filter(Boolean))].sort();
 
   const totalSKUs = withStatus.length;
   const totalQty = withStatus.reduce((s, i) => s + i.stock, 0);
@@ -207,6 +384,11 @@ export default function Inventory() {
     fontFamily: "'DM Sans', sans-serif", outline: "none",
   };
 
+  // Native <option> elements often ignore the parent <select>'s CSS color
+  // and fall back to system colors (white text on white background in
+  // dark themes). Styling each <option> explicitly fixes this in Chrome/Edge/Firefox.
+  const optionStyle = { color: t.textPrimary, background: t.bgCard };
+
   const SortArrow = ({ col }) => {
     if (sortKey !== col) return <span style={{ opacity: 0.3, marginLeft: 4 }}>↕</span>;
     return <span style={{ marginLeft: 4, color: t.accent }}>{sortDir === "asc" ? "↑" : "↓"}</span>;
@@ -221,10 +403,29 @@ export default function Inventory() {
         .inv-table { width: 100%; border-collapse: collapse; font-size: 12px; }
         .inv-table th { cursor: pointer; user-select: none; }
         .inv-table th:hover { opacity: 0.8; }
+        .inv-edit-btn { background: transparent; border: none; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
         @media (max-width: 640px) { .inv-stat-grid { grid-template-columns: repeat(2,1fr); } }
       `}</style>
 
-      {showAdd && <AddProductModal t={t} onClose={() => setShowAdd(false)} onAdded={loadProducts} />}
+      {showAdd && (
+        <AddProductModal
+          t={t}
+          existingProducts={products}
+          categorySuggestions={categorySuggestions}
+          onClose={() => setShowAdd(false)}
+          onAdded={loadProducts}
+        />
+      )}
+      {editProduct && (
+        <EditProductModal
+          t={t}
+          product={editProduct}
+          existingProducts={products}
+          categorySuggestions={categorySuggestions}
+          onClose={() => setEditProduct(null)}
+          onSaved={loadProducts}
+        />
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
@@ -253,11 +454,11 @@ export default function Inventory() {
           <div className="inv-filters">
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or SKU…" style={{ ...inputStyle, flex: "1 1 200px", minWidth: "160px" }} />
             <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-              <option>All</option>
-              {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+              <option style={optionStyle}>All</option>
+              {filterCategories.map((c) => <option key={c} style={optionStyle}>{c}</option>)}
             </select>
             <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-              {STATUSES.map((s) => <option key={s}>{s}</option>)}
+              {STATUSES.map((s) => <option key={s} style={optionStyle}>{s}</option>)}
             </select>
             <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "auto" }}>{filtered.length} of {withStatus.length} items</span>
           </div>
@@ -281,11 +482,16 @@ export default function Inventory() {
                       fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap",
                     }}>{label}<SortArrow col={key} /></th>
                   ))}
+                  <th style={{
+                    textAlign: "left", paddingBottom: "10px", fontSize: "10px", fontWeight: 600,
+                    textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted,
+                    fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap", cursor: "default",
+                  }}>Edit</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={7} style={{ textAlign: "center", padding: "40px 0", color: t.textMuted, fontSize: "13px" }}>No items match your filters.</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: "center", padding: "40px 0", color: t.textMuted, fontSize: "13px" }}>No items match your filters.</td></tr>
                 ) : filtered.map((item, i) => (
                   <tr key={item._id || item.productId} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${t.borderLight ?? t.border}` : "none" }}>
                     <td style={{ padding: "10px 16px 10px 0", fontFamily: "monospace", fontSize: "11px", color: t.textMuted }}>{item.productId}</td>
@@ -296,6 +502,14 @@ export default function Inventory() {
                     <td style={{ padding: "10px 16px 10px 0", fontSize: "11px", color: item.growthPercent >= 0 ? t.green : t.red }}>{item.growthPercent >= 0 ? "+" : ""}{item.growthPercent}%</td>
                     <td style={{ padding: "10px 0" }}>
                       <span style={{ fontSize: "10px", fontWeight: 600, padding: "3px 9px", borderRadius: "99px", color: statusStyle[item.status].color, background: statusStyle[item.status].bg, whiteSpace: "nowrap" }}>{item.status}</span>
+                    </td>
+                    <td style={{ padding: "10px 0" }}>
+                      <button
+                        className="inv-edit-btn"
+                        onClick={() => setEditProduct(item)}
+                        title="Edit product"
+                        style={{ color: t.accent }}
+                      ><EditIcon /></button>
                     </td>
                   </tr>
                 ))}

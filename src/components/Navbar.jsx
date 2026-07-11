@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../components/ThemeContext";
 import { useNotifications } from "../components/NotificationContext";
+import { useAuth } from "../context/AuthContext"; // ⬅️ adjust path if AuthContext file is elsewhere
 
 // ─── NAV ITEMS with routes ────────────────────────────────────────────────────
 export const NAV_ITEMS = [
@@ -26,6 +27,14 @@ function useIsDesktop(breakpoint = 768) {
     return () => window.removeEventListener("resize", handler);
   }, [breakpoint]);
   return isDesktop;
+}
+
+// ─── HELPER: initials from name ──────────────────────────────────────────────
+function getInitials(name) {
+  if (!name || typeof name !== "string") return "?";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 // ─── THEME TOGGLE ─────────────────────────────────────────────────────────────
@@ -89,9 +98,13 @@ export function Logo() {
 export function Navbar({ sidebarOpen, setSidebarOpen }) {
   const { t } = useTheme();
   const { unreadCount } = useNotifications();
+  const { user } = useAuth(); // ⬅️ dynamic user
   const navigate = useNavigate();
   const location = useLocation();
   const isDesktop = useIsDesktop();
+
+  const displayName = user?.name || "Guest";
+  const initials = getInitials(displayName);
 
   const centerLinks = NAV_ITEMS.filter(
     (n) => n.label !== "Notifications" && n.label !== "Settings" && n.label !== "Subscription"
@@ -199,15 +212,18 @@ export function Navbar({ sidebarOpen, setSidebarOpen }) {
           </button>
         )}
 
-        {/* Avatar — desktop */}
+        {/* Avatar — desktop (dynamic initials) */}
         {isDesktop && (
-          <div style={{
-            width: "36px", height: "36px", borderRadius: "8px",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: "11px", fontWeight: 700, color: "#fff", cursor: "pointer",
-            background: `linear-gradient(135deg, ${t.accent}, ${t.accentLight})`,
-            fontFamily: "'Syne', sans-serif",
-          }}>NK</div>
+          <div
+            title={displayName}
+            style={{
+              width: "36px", height: "36px", borderRadius: "8px",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: "11px", fontWeight: 700, color: "#fff", cursor: "pointer",
+              background: `linear-gradient(135deg, ${t.accent}, ${t.accentLight})`,
+              fontFamily: "'Syne', sans-serif",
+            }}
+          >{initials}</div>
         )}
 
         {/* Hamburger — mobile */}
@@ -240,8 +256,13 @@ export function Navbar({ sidebarOpen, setSidebarOpen }) {
 export function Sidebar({ open, onClose }) {
   const { t } = useTheme();
   const { unreadCount } = useNotifications();
+  const { user } = useAuth(); // ⬅️ dynamic user
   const navigate = useNavigate();
   const location = useLocation();
+
+  const displayName = user?.name || "Guest";
+  const displayEmail = user?.email || "";
+  const initials = getInitials(displayName);
 
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
@@ -327,7 +348,7 @@ export function Sidebar({ open, onClose }) {
           })}
         </nav>
 
-        {/* Footer */}
+        {/* Footer — dynamic user info */}
         <div style={{
           padding: "16px 20px", borderTop: `1px solid ${t.border}`,
           display: "flex", alignItems: "center", gap: "12px",
@@ -338,10 +359,17 @@ export function Sidebar({ open, onClose }) {
             fontSize: "11px", fontWeight: 700, color: "#fff",
             background: `linear-gradient(135deg, ${t.accent}, ${t.accentLight})`,
             fontFamily: "'Syne', sans-serif", flexShrink: 0,
-          }}>RJ</div>
-          <div>
-            <p style={{ fontSize: "13px", fontWeight: 600, color: t.textPrimary, fontFamily: "'Syne', sans-serif", margin: 0 }}>Rajyadu Admin</p>
-            <p style={{ fontSize: "11px", color: t.textMuted, margin: 0 }}>admin@rajyadu.in</p>
+          }}>{initials}</div>
+          <div style={{ overflow: "hidden" }}>
+            <p style={{
+              fontSize: "13px", fontWeight: 600, color: t.textPrimary,
+              fontFamily: "'Syne', sans-serif", margin: 0,
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}>{displayName}</p>
+            <p style={{
+              fontSize: "11px", color: t.textMuted, margin: 0,
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}>{displayEmail}</p>
           </div>
         </div>
       </aside>

@@ -2,12 +2,14 @@ import { useState, useRef, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+ 
+import logoAsset from "../assets/draft-bill-logo.png";
 
 const BACKEND = "https://billing-backend-tawny.vercel.app";
 
-const STATUSES = ["All", "Delivered", "Processing", "Pending", "Cancelled"];
+const STATUSES = ["All", "Completed", "Pending", "Cancelled"];
 
-// ─── Brand config — swap logo path here when you have the image ───────
+// ─── Brand config ───────────────────────────────────────────────────────
 const BRAND = {
   name: "Draftbill",
   tagline: "Invoicing, made simple",
@@ -15,8 +17,29 @@ const BRAND = {
   darkRGB: [17, 24, 39],
   grayRGB: [107, 114, 128],
   lightBgRGB: [245, 247, 250],
-  logoDataUrl: null, // <-- put a base64 image string here later, e.g. "data:image/png;base64,...."
 };
+
+// jsPDF's addImage() needs a base64 data string or a loaded Image element — it
+// CANNOT load a plain file path like "./src/assets/logo.png". So we fetch the
+// imported asset once, convert it to base64, and cache it for reuse.
+let cachedLogoBase64 = null;
+async function getLogoBase64() {
+  if (cachedLogoBase64) return cachedLogoBase64;
+  try {
+    const res = await fetch(logoAsset);
+    const blob = await res.blob();
+    cachedLogoBase64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    return cachedLogoBase64;
+  } catch (e) {
+    console.error("Could not load logo image:", e);
+    return null;
+  }
+}
 
 // ─── Icons (no external deps needed) ───────────────────────────────────
 function EyeIcon({ size = 15 }) {
@@ -57,7 +80,6 @@ function inr(n) {
 function findInvoiceForOrder(order, invoices) {
   if (!invoices || !invoices.length) return null;
 
-  // 1) Direct link, if backend stores it on the order
   if (order.invoiceId) {
     const direct = invoices.find(
       (inv) => inv.invoiceId === order.invoiceId || inv._id === order.invoiceId
@@ -65,7 +87,6 @@ function findInvoiceForOrder(order, invoices) {
     if (direct) return direct;
   }
 
-  // 2) Fallback: same customer + product appears in invoice items
   const orderDate = getOrderDate(order);
   const candidates = invoices.filter(
     (inv) =>
@@ -75,7 +96,6 @@ function findInvoiceForOrder(order, invoices) {
   if (!candidates.length) return null;
   if (candidates.length === 1) return candidates[0];
 
-  // pick the invoice closest in date to the order
   return candidates.reduce((best, cur) => {
     const bd = Math.abs(new Date(best.createdAt).getTime() - (orderDate?.getTime() || 0));
     const cd = Math.abs(new Date(cur.createdAt).getTime() - (orderDate?.getTime() || 0));
@@ -150,7 +170,9 @@ function useInvoicesData(pollMs = 30000) {
 }
 
 // ─── SHARED: build & download a professional PDF invoice ──────────────
-function downloadInvoicePDF(invoice) {
+// NOTE: now async because loading the logo (fetch + FileReader) is async.
+// Every call site must now `await downloadInvoicePDF(invoice)`.
+async function downloadInvoicePDF(invoice) {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 14;
@@ -158,19 +180,21 @@ function downloadInvoicePDF(invoice) {
     day: "2-digit", month: "short", year: "numeric",
   });
 
+  const logoBase64 = await getLogoBase64();
+
   // ── Header band ──
   doc.setFillColor(...BRAND.darkRGB);
   doc.rect(0, 0, pageWidth, 38, "F");
 
-  if (BRAND.logoDataUrl) {
+  if (logoBase64) {
     // Logo image — adjust width/height to match your actual logo's aspect ratio
-    doc.addImage(BRAND.logoDataUrl, "PNG", margin, 9, 20, 20);
+    doc.addImage(logoBase64, margin, 9, 20, 20);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
     doc.setTextColor(255, 255, 255);
     doc.text(BRAND.name, margin + 26, 18);
   } else {
-    // Placeholder logo box until image is provided
+    // Placeholder logo box if the image failed to load
     doc.setDrawColor(255, 255, 255);
     doc.setLineWidth(0.6);
     doc.roundedRect(margin, 9, 20, 20, 3, 3);
@@ -377,6 +401,7 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [items, setItems] = useState([{ name: "", qty: 1, price: 0 }]);
+  const [orderStatus, setOrderStatus] = useState("Completed");
 
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -393,7 +418,6 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
       .catch(() => setProducts([]));
   }, []);
 
-  // Cleanup mic if the modal closes/unmounts while still listening
   useEffect(() => {
     return () => {
       shouldListenRef.current = false;
@@ -401,7 +425,6 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
     };
   }, []);
 
-  // ── Voice recognition (Chrome/Edge only) — keeps listening until user stops it ──
   const startListening = () => {
     setErr("");
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -417,14 +440,12 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
     recognition.onstart = () => setListening(true);
 
     recognition.onerror = (e) => {
-      // "no-speech" fires often during pauses — ignore it, auto-restart handles it
       if (e.error !== "no-speech" && e.error !== "aborted") {
         setErr("Error capturing voice, please try again");
       }
     };
 
     recognition.onend = () => {
-      // Browser sometimes stops on its own after silence — restart unless user pressed Stop
       if (shouldListenRef.current) {
         try {
           recognition.start();
@@ -476,7 +497,6 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
       if (data.customerEmail) setCustomerEmail(data.customerEmail);
       if (data.customerPhone) setCustomerPhone(data.customerPhone);
       if (data.items && data.items.length) {
-        // Try to match parsed item names to real products for accurate pricing
         const matched = data.items.map((it) => {
           const found = products.find((p) => p.name.toLowerCase() === it.name.toLowerCase());
           return found ? { name: found.name, qty: it.qty, price: found.price } : it;
@@ -490,12 +510,10 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
     }
   };
 
-  // ── Manual item editing ──
   const updateItem = (idx, key, value) => {
     setItems((prev) => prev.map((it, i) => {
       if (i !== idx) return it;
       const updated = { ...it, [key]: value };
-      // Auto-fill price when a known product name is selected
       if (key === "name") {
         const found = products.find((p) => p.name.toLowerCase() === value.toLowerCase());
         if (found) updated.price = found.price;
@@ -508,7 +526,6 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
 
   const total = items.reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
 
-  // ── Save invoice to backend (decrements stock + creates real orders) then generate PDF ──
   const handleGenerate = async () => {
     setErr("");
     if (!customerName.trim()) return setErr("Customer name is required");
@@ -527,12 +544,13 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
           items: validItems.map((it) => ({ name: it.name, qty: Number(it.qty), price: Number(it.price) })),
           subtotal: total,
           total,
+          status: orderStatus,
         }),
       });
       const savedInvoice = await res.json();
       if (!res.ok) throw new Error(savedInvoice.error || "Could not save invoice");
 
-      downloadInvoicePDF(savedInvoice);
+      await downloadInvoicePDF(savedInvoice);
       onSaved?.();
       onClose();
     } catch (e) {
@@ -563,7 +581,6 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
           Create Invoice
         </h3>
 
-        {/* Voice / Text Input Section */}
         <div style={{
           background: `${t.accent}08`, border: `1px solid ${t.accent}30`,
           borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 10,
@@ -607,7 +624,6 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
 
         {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>{err}</p>}
 
-        {/* Customer Details */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={{ fontSize: 11, color: t.textMuted }}>Customer Name *</label>
@@ -623,7 +639,6 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
           </div>
         </div>
 
-        {/* Items */}
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <label style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Items (select from your products — price fills automatically)</label>
@@ -668,7 +683,31 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
           </div>
         </div>
 
-        {/* Total (no tax) */}
+        <div>
+          <label style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Order Status</label>
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            {["Completed", "Pending"].map((s) => (
+              <button
+                key={s}
+                onClick={() => setOrderStatus(s)}
+                style={{
+                  flex: 1,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  border: orderStatus === s ? `1.5px solid ${t.accent}` : `1px solid ${t.border}`,
+                  background: orderStatus === s ? `${t.accent}12` : "transparent",
+                  color: orderStatus === s ? t.accent : t.textMuted,
+                }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 12, display: "flex", justifyContent: "flex-end" }}>
           <p style={{ fontSize: 16, fontWeight: 900, color: t.textPrimary, margin: 0, fontFamily: "'Syne', sans-serif" }}>
             Total: ₹{total.toLocaleString("en-IN")}
@@ -708,7 +747,8 @@ export default function Orders() {
 
   const totalOrders = orders.length;
   const totalRevenue = orders.reduce((s, o) => (o.status !== "Cancelled" ? s + (Number(o.amount) || 0) : s), 0);
-  const delivered = orders.filter((o) => o.status === "Delivered").length;
+  const completed = orders.filter((o) => o.status === "Completed").length;
+  const pending = orders.filter((o) => o.status === "Pending").length;
   const cancelled = orders.filter((o) => o.status === "Cancelled").length;
 
   const filtered = orders
@@ -744,8 +784,7 @@ export default function Orders() {
   };
 
   const statusStyle = {
-    "Delivered": { color: t.green, bg: t.greenBg },
-    "Processing": { color: t.blue, bg: `${t.blue}18` },
+    "Completed": { color: t.green, bg: t.greenBg },
     "Pending": { color: t.orange, bg: t.orangeBg },
     "Cancelled": { color: t.red, bg: t.redBg },
   };
@@ -800,7 +839,6 @@ export default function Orders() {
 
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
-        {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
           <div>
             <h1 style={{
@@ -820,15 +858,14 @@ export default function Orders() {
           </div>
         </div>
 
-        {/* Stat Cards */}
         <div className="ord-stat-grid">
           <StatCard label="Total Orders" value={loading ? "…" : totalOrders} sub="all time" />
           <StatCard label="Total Revenue" value={loading ? "…" : inr(totalRevenue)} sub="from orders" />
-          <StatCard label="Delivered" value={loading ? "…" : delivered} trend={loading ? undefined : `${delivered} orders`} trendDir="up" sub="completed" />
+          <StatCard label="Completed" value={loading ? "…" : completed} trend={loading ? undefined : `${completed} orders`} trendDir="up" sub="done" />
+          <StatCard label="Pending" value={loading ? "…" : pending} trend={loading ? undefined : `${pending} orders`} trendDir="neu" sub="awaiting" />
           <StatCard label="Cancelled" value={loading ? "…" : cancelled} trend={loading ? undefined : `${cancelled} orders`} trendDir="down" sub="lost" />
         </div>
 
-        {/* Table Card */}
         <div style={{
           borderRadius: "16px", padding: "20px",
           background: t.bgCard, border: `1px solid ${t.border}`,
@@ -836,7 +873,6 @@ export default function Orders() {
           display: "flex", flexDirection: "column", gap: "16px",
         }}>
 
-          {/* Filters */}
           <div className="ord-filters">
             <input
               value={search}
@@ -852,7 +888,6 @@ export default function Orders() {
             </span>
           </div>
 
-          {/* Table */}
           <div className="ord-table-wrap">
             <table className="ord-table">
               <thead>

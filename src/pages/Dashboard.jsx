@@ -234,16 +234,22 @@ async function fetchLiveDashboardContext() {
       return acc;
     }, {});
 
+    // Compute status breakdown directly from orders so it stays correct
+    // regardless of what the /stats endpoint returns.
+    const completedCount = orders.filter((o) => o.status === "Completed").length;
+    const pendingCount = orders.filter((o) => o.status === "Pending").length;
+    const cancelledCount = orders.filter((o) => o.status === "Cancelled").length;
+
     return `
 You are an expert business analyst AI assistant embedded in a live business analytics dashboard.
 Always respond in clear, professional English. Be concise, insightful, and actionable (2-4 sentences max unless asked for detail).
 Always use ₹ for currency. Be direct and data-driven.
 
 === LIVE BUSINESS SNAPSHOT ===
-- Total Orders: ${stats.total}
-- Total Revenue: ₹${stats.totalRevenue?.toLocaleString("en-IN")}
-- Delivered: ${stats.delivered} | Pending: ${stats.pending} | Processing: ${stats.processing} | Cancelled: ${stats.cancelled}
-- Cancellation Rate: ${stats.total ? ((stats.cancelled / stats.total) * 100).toFixed(1) : 0}%
+- Total Orders: ${stats.total ?? orders.length}
+- Total Revenue: ₹${(stats.totalRevenue ?? 0).toLocaleString("en-IN")}
+- Completed: ${completedCount} | Pending: ${pendingCount} | Cancelled: ${cancelledCount}
+- Cancellation Rate: ${orders.length ? ((cancelledCount / orders.length) * 100).toFixed(1) : 0}%
 
 === PRODUCTS IN STOCK ===
 ${products.map((p) => `- ${p.name} (${p.category}): ${p.stock} units @ ₹${p.price?.toLocaleString("en-IN")} | Growth: +${p.growthPercent}%`).join("\n")}
@@ -609,18 +615,25 @@ function RevenueChart({ monthly, loading }) {
   return <div style={{ height: 220 }}><Bar data={data} options={options} /></div>;
 }
 
-// ─── ORDER DONUT (dynamic — driven by /api/orders/stats) ──────────────────
-function OrderDonut({ stats, loading }) {
+// ─── ORDER DONUT (dynamic — computed directly from live orders array) ─────
+// Simplified to 3 real-world states for an offline/in-person business:
+// Completed (sale finalized), Pending (payment/order not finalized yet),
+// Cancelled. "Processing"/"Delivered" are shipping-era concepts we don't need.
+function OrderDonut({ orders, loading }) {
   const { t } = useTheme();
   const tooltipDefaults = { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody };
 
-  if (loading || !stats) return <p style={{ color: t.textMuted, fontSize: 12 }}>Loading order status…</p>;
+  if (loading) return <p style={{ color: t.textMuted, fontSize: 12 }}>Loading order status…</p>;
+
+  const completed = orders.filter((o) => o.status === "Completed").length;
+  const pending = orders.filter((o) => o.status === "Pending").length;
+  const cancelled = orders.filter((o) => o.status === "Cancelled").length;
 
   const data = {
-    labels: ["Delivered", "Pending", "Processing", "Cancelled"],
+    labels: ["Completed", "Pending", "Cancelled"],
     datasets: [{
-      data: [stats.delivered || 0, stats.pending || 0, stats.processing || 0, stats.cancelled || 0],
-      backgroundColor: [t.green, t.orange, t.blue, t.red],
+      data: [completed, pending, cancelled],
+      backgroundColor: [t.green, t.orange, t.red],
       borderColor: t.bgCard, borderWidth: 3, hoverOffset: 8,
     }],
   };
@@ -695,8 +708,7 @@ function CustomerArea({ growth, loading }) {
 function InvoicesTable({ orders, loading }) {
   const { t } = useTheme();
   const statusStyle = {
-    Delivered: { color: t.green, bg: t.greenBg },
-    Processing: { color: t.blue, bg: `${t.blue}18` },
+    Completed: { color: t.green, bg: t.greenBg },
     Pending: { color: t.orange, bg: t.orangeBg },
     Cancelled: { color: t.red, bg: t.redBg },
   };
@@ -831,7 +843,7 @@ export default function Dashboard() {
                 <RevenueChart monthly={monthlyRevenue} loading={loading} />
               </ChartCard>
               <ChartCard title="Order Status" sub="Live breakdown">
-                <OrderDonut stats={stats} loading={loading} />
+                <OrderDonut orders={orders} loading={loading} />
               </ChartCard>
             </div>
 
