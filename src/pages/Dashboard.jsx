@@ -310,10 +310,14 @@ function AiChatWidget({ t }) {
     setLoading(true);
 
     try {
+      // Send recent history (excluding the just-added user message, which
+      // goes separately as `message`) so the backend can resolve follow-ups
+      // like "uska price kya hai".
+      const history = newMessages.slice(0, -1).slice(-12);
       const res = await fetch(`${BACKEND}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userText }),
+        body: JSON.stringify({ message: userText, history }),
       });
 
       const data = await res.json();
