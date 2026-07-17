@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
- 
+
 import logoAsset from "../assets/draft-bill-logo.png";
 
 const BACKEND = "https://billing-backend-tawny.vercel.app";
@@ -103,6 +103,59 @@ function findInvoiceForOrder(order, invoices) {
   });
 }
 
+// ─── PRODUCT MATCHING (handles "butter milk" vs "Buttermilk", typos etc.) ──
+// Strips spaces/punctuation/case before comparing, so spoken/typed variants
+// like "butter milk", "Butter-Milk", "BUTTERMILK" all resolve to the same
+// catalog entry "Buttermilk".
+function normalizeStr(s) {
+  return (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Simple Levenshtein edit distance — used as a fallback for genuine typos
+// (not just spacing differences, which normalizeStr already handles).
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// Returns the matching product object, or null if nothing close enough is found.
+function findBestProductMatch(rawName, products) {
+  if (!rawName || !products?.length) return null;
+  const target = normalizeStr(rawName);
+  if (!target) return null;
+
+  // 1) exact match once spaces/punctuation/case are stripped
+  const exact = products.find((p) => normalizeStr(p.name) === target);
+  if (exact) return exact;
+
+  // 2) fuzzy match — allow a small edit distance relative to name length,
+  //    to catch minor mis-hearings/typos beyond just spacing
+  let best = null;
+  let bestDist = Infinity;
+  for (const p of products) {
+    const pName = normalizeStr(p.name);
+    const dist = levenshtein(target, pName);
+    const threshold = Math.max(1, Math.floor(Math.max(target.length, pName.length) * 0.25));
+    if (dist <= threshold && dist < bestDist) {
+      best = p;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
 // ─── live orders hook ───────────────────────────────────────────────────
 function useOrdersData(pollMs = 30000) {
   const [state, setState] = useState({ loading: true, error: null, orders: [] });
@@ -170,8 +223,6 @@ function useInvoicesData(pollMs = 30000) {
 }
 
 // ─── SHARED: build & download a professional PDF invoice ──────────────
-// NOTE: now async because loading the logo (fetch + FileReader) is async.
-// Every call site must now `await downloadInvoicePDF(invoice)`.
 async function downloadInvoicePDF(invoice) {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -187,14 +238,12 @@ async function downloadInvoicePDF(invoice) {
   doc.rect(0, 0, pageWidth, 38, "F");
 
   if (logoBase64) {
-    // Logo image — adjust width/height to match your actual logo's aspect ratio
     doc.addImage(logoBase64, margin, 9, 20, 20);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
     doc.setTextColor(255, 255, 255);
     doc.text(BRAND.name, margin + 26, 18);
   } else {
-    // Placeholder logo box if the image failed to load
     doc.setDrawColor(255, 255, 255);
     doc.setLineWidth(0.6);
     doc.roundedRect(margin, 9, 20, 20, 3, 3);
@@ -408,8 +457,12 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [autoParseEnabled, setAutoParseEnabled] = useState(true);
   const recognitionRef = useRef(null);
   const shouldListenRef = useRef(false);
+  const micStreamRef = useRef(null);
+  const autoParseTimerRef = useRef(null);
+  const handleParseRef = useRef(null);
 
   useEffect(() => {
     fetch(`${BACKEND}/api/products`)
@@ -422,16 +475,43 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
     return () => {
       shouldListenRef.current = false;
       recognitionRef.current?.stop();
+      clearTimeout(autoParseTimerRef.current);
+      micStreamRef.current?.getTracks().forEach((tr) => tr.stop());
     };
   }, []);
 
-  const startListening = () => {
+  // Ask the browser/OS for noise suppression + echo cancellation + auto gain
+  // BEFORE SpeechRecognition grabs the mic. Web Speech API manages its own
+  // audio internally and doesn't accept a custom stream, but priming
+  // getUserMedia with these constraints first nudges Chrome/Edge into
+  // applying its noise-suppression pipeline for the session, which helps a
+  // lot in a noisy shop with several customers talking.
+  const primeMicrophone = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      micStreamRef.current = stream;
+    } catch {
+      // ignore — recognition will still ask for its own mic permission
+    }
+  };
+
+  const releaseMicPrime = () => {
+    micStreamRef.current?.getTracks().forEach((tr) => tr.stop());
+    micStreamRef.current = null;
+  };
+
+  const startListening = async () => {
     setErr("");
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setErr("Voice recognition only works in Chrome or Edge browser");
       return;
     }
+
+    await primeMicrophone();
+
     const recognition = new SpeechRecognition();
     recognition.lang = "en-IN";
     recognition.continuous = true;
@@ -454,6 +534,7 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
         }
       } else {
         setListening(false);
+        releaseMicPrime();
       }
     };
 
@@ -466,6 +547,16 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
       }
       if (newText.trim()) {
         setTranscript((prev) => (prev ? prev + " " + newText.trim() : newText.trim()));
+
+        // Auto re-parse a couple seconds after the customer's speech pauses,
+        // so the bill fills itself in without needing a manual tap every time —
+        // useful when it's noisy and the cashier's hands are full.
+        if (autoParseEnabled) {
+          clearTimeout(autoParseTimerRef.current);
+          autoParseTimerRef.current = setTimeout(() => {
+            handleParseRef.current?.();
+          }, 2200);
+        }
       }
     };
 
@@ -477,7 +568,9 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
   const stopListening = () => {
     shouldListenRef.current = false;
     recognitionRef.current?.stop();
+    clearTimeout(autoParseTimerRef.current);
     setListening(false);
+    releaseMicPrime();
   };
 
   const handleParse = async () => {
@@ -498,8 +591,10 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
       if (data.customerPhone) setCustomerPhone(data.customerPhone);
       if (data.items && data.items.length) {
         const matched = data.items.map((it) => {
-          const found = products.find((p) => p.name.toLowerCase() === it.name.toLowerCase());
-          return found ? { name: found.name, qty: it.qty, price: found.price } : it;
+          const found = findBestProductMatch(it.name, products);
+          return found
+            ? { name: found.name, qty: it.qty, price: found.price, _matched: true }
+            : { ...it, _matched: false };
         });
         setItems(matched);
       }
@@ -510,17 +605,43 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
     }
   };
 
+  // Keep a live ref to the latest handleParse closure so the auto-parse
+  // timer (set inside recognition.onresult) always calls the version that
+  // sees the current transcript/products state.
+  useEffect(() => {
+    handleParseRef.current = handleParse;
+  });
+
   const updateItem = (idx, key, value) => {
     setItems((prev) => prev.map((it, i) => {
       if (i !== idx) return it;
       const updated = { ...it, [key]: value };
       if (key === "name") {
-        const found = products.find((p) => p.name.toLowerCase() === value.toLowerCase());
-        if (found) updated.price = found.price;
+        // Don't overwrite what the user is typing on every keystroke — just
+        // try to autofill the price if there's already an unambiguous match.
+        const found = findBestProductMatch(value, products);
+        if (found) {
+          updated.price = found.price;
+          updated._matched = true;
+        } else {
+          updated._matched = undefined;
+        }
       }
       return updated;
     }));
   };
+
+  // On leaving the name field, snap to the closest catalog product (fixes
+  // casing/spacing/minor typos) so the printed invoice uses the official name.
+  const handleItemNameBlur = (idx) => {
+    setItems((prev) => prev.map((it, i) => {
+      if (i !== idx || !it.name.trim()) return it;
+      const found = findBestProductMatch(it.name, products);
+      if (found) return { ...it, name: found.name, price: found.price, _matched: true };
+      return { ...it, _matched: false };
+    }));
+  };
+
   const addItemRow = () => setItems((prev) => [...prev, { name: "", qty: 1, price: 0 }]);
   const removeItemRow = (idx) => setItems((prev) => prev.filter((_, i) => i !== idx));
 
@@ -585,9 +706,19 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
           background: `${t.accent}08`, border: `1px solid ${t.accent}30`,
           borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 10,
         }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
-            Speak or type the full bill
-          </p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
+              Speak or type the full bill
+            </p>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: t.textMuted, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={autoParseEnabled}
+                onChange={(e) => setAutoParseEnabled(e.target.checked)}
+              />
+              Auto-fill on pause
+            </label>
+          </div>
           <textarea
             value={transcript}
             onChange={(e) => setTranscript(e.target.value)}
@@ -619,7 +750,7 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
               {parsing ? "⏳ Parsing..." : "✨ Auto-fill from text"}
             </button>
           </div>
-          {listening && <p style={{ fontSize: 11, color: t.accent, margin: 0 }}>🔴 Listening... speak now</p>}
+          {listening && <p style={{ fontSize: 11, color: t.accent, margin: 0 }}>🔴 Listening... speak now (noise suppression active)</p>}
         </div>
 
         {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>{err}</p>}
@@ -652,32 +783,43 @@ function CreateInvoiceModal({ onClose, onSaved, t }) {
           </datalist>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {items.map((it, idx) => (
-              <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 60px 80px 28px", gap: 6, alignItems: "center" }}>
-                <input
-                  style={inputStyle}
-                  list="product-options"
-                  value={it.name}
-                  onChange={(e) => updateItem(idx, "name", e.target.value)}
-                  placeholder="Select or type item name"
-                />
-                <input
-                  type="number"
-                  style={inputStyle}
-                  value={it.qty}
-                  onChange={(e) => updateItem(idx, "qty", e.target.value)}
-                  placeholder="Qty"
-                />
-                <input
-                  type="number"
-                  style={inputStyle}
-                  value={it.price}
-                  onChange={(e) => updateItem(idx, "price", e.target.value)}
-                  placeholder="Price"
-                />
-                <button
-                  onClick={() => removeItemRow(idx)}
-                  style={{ background: "transparent", border: "none", color: t.red, cursor: "pointer", fontSize: 16 }}
-                >×</button>
+              <div key={idx}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 80px 28px", gap: 6, alignItems: "center" }}>
+                  <input
+                    style={{
+                      ...inputStyle,
+                      border: it._matched === false ? `1px solid ${t.orange}` : inputStyle.border,
+                    }}
+                    list="product-options"
+                    value={it.name}
+                    onChange={(e) => updateItem(idx, "name", e.target.value)}
+                    onBlur={() => handleItemNameBlur(idx)}
+                    placeholder="Select or type item name"
+                  />
+                  <input
+                    type="number"
+                    style={inputStyle}
+                    value={it.qty}
+                    onChange={(e) => updateItem(idx, "qty", e.target.value)}
+                    placeholder="Qty"
+                  />
+                  <input
+                    type="number"
+                    style={inputStyle}
+                    value={it.price}
+                    onChange={(e) => updateItem(idx, "price", e.target.value)}
+                    placeholder="Price"
+                  />
+                  <button
+                    onClick={() => removeItemRow(idx)}
+                    style={{ background: "transparent", border: "none", color: t.red, cursor: "pointer", fontSize: 16 }}
+                  >×</button>
+                </div>
+                {it._matched === false && it.name.trim() && (
+                  <p style={{ fontSize: 10, color: t.orange, margin: "2px 2px 0" }}>
+                    Not found in your product list — check the price manually.
+                  </p>
+                )}
               </div>
             ))}
           </div>

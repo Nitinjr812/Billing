@@ -40,6 +40,17 @@ function inr(n) {
   return "₹" + (Number(n) || 0).toLocaleString("en-IN");
 }
 
+function timeAgo(date) {
+  if (!date) return "";
+  const secs = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (secs < 10) return "just now";
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ago`;
+}
+
 // last `count` calendar months (oldest → newest), each keyed by "YYYY-M"
 function lastMonths(count) {
   const now = new Date();
@@ -143,8 +154,6 @@ function computeKpis(stats, orders) {
 }
 
 // ─── live data hook (single source of truth for the whole dashboard) ──────
-// Pulls straight from the real MongoDB-backed legacy routes — no shop
-// selection, no seed data. One shop, real orders/products/stats.
 function useDashboardData(pollMs = 60000) {
   const [state, setState] = useState({
     loading: true,
@@ -153,6 +162,7 @@ function useDashboardData(pollMs = 60000) {
     products: [],
     orders: [],
     alerts: null,
+    lastUpdated: null,
   });
 
   useEffect(() => {
@@ -186,6 +196,7 @@ function useDashboardData(pollMs = 60000) {
             products: Array.isArray(products) ? products : [],
             orders: Array.isArray(orders) ? orders : [],
             alerts,
+            lastUpdated: new Date(),
           });
         }
       } catch (err) {
@@ -210,7 +221,7 @@ function useDashboardData(pollMs = 60000) {
   return state;
 }
 
-// ─── AI CHAT WIDGET (unchanged) ────────────────────────────────────────────
+// ─── AI CHAT WIDGET CONTEXT (unchanged logic) ─────────────────────────────
 async function fetchLiveDashboardContext() {
   try {
     const [statsRes, productsRes, alertsRes, ordersRes] = await Promise.all([
@@ -234,8 +245,6 @@ async function fetchLiveDashboardContext() {
       return acc;
     }, {});
 
-    // Compute status breakdown directly from orders so it stays correct
-    // regardless of what the /stats endpoint returns.
     const completedCount = orders.filter((o) => o.status === "Completed").length;
     const pendingCount = orders.filter((o) => o.status === "Pending").length;
     const cancelledCount = orders.filter((o) => o.status === "Cancelled").length;
@@ -329,38 +338,41 @@ function AiChatWidget({ t }) {
 
   return (
     <div
+      className="dash-card dash-fade-in"
       style={{
-        borderRadius: "16px",
+        borderRadius: "18px",
         background: t.bgCard,
         border: `1px solid ${t.border}`,
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-        transition: "background 0.25s ease, border-color 0.25s ease",
+        transition: "background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease",
       }}
     >
       <div
         style={{
-          padding: "12px 14px",
+          padding: "14px 16px",
           borderBottom: `1px solid ${t.border}`,
           display: "flex",
           alignItems: "center",
           gap: "10px",
           flexShrink: 0,
+          background: `linear-gradient(180deg, ${t.accent}0a, transparent)`,
         }}
       >
         <div
           style={{
-            width: 30,
-            height: 30,
-            borderRadius: "9px",
-            background: `${t.accent}22`,
+            width: 32,
+            height: 32,
+            borderRadius: "10px",
+            background: `linear-gradient(135deg, ${t.accent}30, ${t.accent}10)`,
             border: `1px solid ${t.accent}44`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: "14px",
+            fontSize: "15px",
             flexShrink: 0,
+            boxShadow: `0 0 0 3px ${t.accent}0d`,
           }}
         >
           ✦
@@ -369,13 +381,15 @@ function AiChatWidget({ t }) {
           <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.textPrimary, margin: 0, lineHeight: 1.2 }}>
             AI Analyst
           </p>
-          <p style={{ fontSize: "10px", color: t.green, fontWeight: 600, margin: 0 }}>● Online</p>
+          <p style={{ fontSize: "10px", color: t.green, fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: "4px" }}>
+            <span className="dash-pulse-dot" style={{ background: t.green }} /> Online
+          </p>
         </div>
         <span
           style={{
             fontSize: "10px",
-            fontWeight: 600,
-            padding: "3px 8px",
+            fontWeight: 700,
+            padding: "3px 9px",
             borderRadius: "99px",
             color: t.accent,
             background: `${t.accent}15`,
@@ -383,9 +397,10 @@ function AiChatWidget({ t }) {
             fontFamily: "'DM Sans', sans-serif",
             whiteSpace: "nowrap",
             flexShrink: 0,
+            letterSpacing: "0.03em",
           }}
         >
-          Live
+          LIVE
         </span>
       </div>
 
@@ -393,7 +408,7 @@ function AiChatWidget({ t }) {
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "10px",
+          padding: "12px",
           display: "flex",
           flexDirection: "column",
           gap: "8px",
@@ -406,7 +421,7 @@ function AiChatWidget({ t }) {
             <div
               style={{
                 maxWidth: "90%",
-                padding: "7px 11px",
+                padding: "8px 12px",
                 borderRadius: msg.role === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px",
                 background: msg.role === "user" ? t.accent : `${t.accent}12`,
                 color: msg.role === "user" ? "#fff" : t.textPrimary,
@@ -414,6 +429,7 @@ function AiChatWidget({ t }) {
                 lineHeight: 1.6,
                 fontFamily: "'DM Sans', sans-serif",
                 border: msg.role === "assistant" ? `1px solid ${t.border}` : "none",
+                boxShadow: msg.role === "user" ? `0 2px 8px ${t.accent}35` : "none",
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}
@@ -435,7 +451,7 @@ function AiChatWidget({ t }) {
         <div ref={bottomRef} />
       </div>
 
-      <div style={{ padding: "6px 10px 4px", display: "flex", gap: "5px", flexWrap: "wrap", flexShrink: 0, borderTop: `1px solid ${t.border}` }}>
+      <div style={{ padding: "8px 12px 6px", display: "flex", gap: "5px", flexWrap: "wrap", flexShrink: 0, borderTop: `1px solid ${t.border}` }}>
         <p style={{ width: "100%", fontSize: "9px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: t.textMuted, margin: "2px 0 3px", fontFamily: "'DM Sans', sans-serif" }}>
           Quick Ask
         </p>
@@ -447,7 +463,7 @@ function AiChatWidget({ t }) {
             style={{
               fontSize: "10px",
               fontWeight: 600,
-              padding: "3px 9px",
+              padding: "4px 10px",
               borderRadius: "99px",
               background: `${t.accent}12`,
               border: `1px solid ${t.accent}28`,
@@ -458,13 +474,15 @@ function AiChatWidget({ t }) {
               transition: "all 0.15s",
               whiteSpace: "nowrap",
             }}
+            onMouseEnter={(e) => { if (!loading) { e.currentTarget.style.background = `${t.accent}22`; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = `${t.accent}12`; }}
           >
             {q.label}
           </button>
         ))}
       </div>
 
-      <div style={{ padding: "8px 10px", borderTop: `1px solid ${t.border}`, display: "flex", gap: "8px", flexShrink: 0 }}>
+      <div style={{ padding: "10px 12px", borderTop: `1px solid ${t.border}`, display: "flex", gap: "8px", flexShrink: 0 }}>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -478,22 +496,25 @@ function AiChatWidget({ t }) {
             background: `${t.accent}08`,
             border: `1px solid ${t.border}`,
             borderRadius: "10px",
-            padding: "7px 10px",
+            padding: "8px 11px",
             fontSize: "12px",
             color: t.textPrimary,
             fontFamily: "'DM Sans', sans-serif",
             outline: "none",
             lineHeight: 1.5,
             minWidth: 0,
+            transition: "border-color 0.15s",
           }}
+          onFocus={(e) => { e.currentTarget.style.borderColor = `${t.accent}70`; }}
+          onBlur={(e) => { e.currentTarget.style.borderColor = t.border; }}
         />
         <button
           onClick={() => sendMessage()}
           disabled={loading || !input.trim()}
           style={{
-            width: 32,
-            height: 32,
-            borderRadius: "9px",
+            width: 34,
+            height: 34,
+            borderRadius: "10px",
             flexShrink: 0,
             background: loading || !input.trim() ? `${t.accent}30` : t.accent,
             border: "none",
@@ -503,8 +524,11 @@ function AiChatWidget({ t }) {
             justifyContent: "center",
             fontSize: "14px",
             color: "#fff",
-            transition: "background 0.2s",
+            transition: "background 0.2s, transform 0.15s",
+            boxShadow: loading || !input.trim() ? "none" : `0 2px 10px ${t.accent}50`,
           }}
+          onMouseDown={(e) => { e.currentTarget.style.transform = "scale(0.92)"; }}
+          onMouseUp={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
         >
           ↑
         </button>
@@ -521,67 +545,117 @@ function AiChatWidget({ t }) {
 }
 
 // ─── KPI CARD ─────────────────────────────────────────────────────────────
-function KpiCard({ label, value, trend, trendDir, sub }) {
+function KpiCard({ icon, label, value, trend, trendDir, sub, loading }) {
   const { t } = useTheme();
   const colors = { up: t.green, down: t.red, neu: t.orange };
   const bgs = { up: t.greenBg, down: t.redBg, neu: t.orangeBg };
 
   return (
     <div
+      className="dash-card dash-fade-in"
       style={{
-        borderRadius: "14px",
-        padding: "14px",
+        borderRadius: "16px",
+        padding: "16px",
         display: "flex",
         flexDirection: "column",
-        gap: "8px",
+        gap: "10px",
         background: t.bgCard,
         border: `1px solid ${t.border}`,
-        transition: "background 0.25s ease, border-color 0.25s ease",
+        transition: "background 0.25s ease, border-color 0.25s ease, box-shadow 0.2s ease, transform 0.2s ease",
         minWidth: 0,
         overflow: "hidden",
+        position: "relative",
       }}
     >
-      <p style={{ fontSize: "9px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: t.textMuted, fontFamily: "'DM Sans', sans-serif", margin: 0 }}>
-        {label}
-      </p>
-      <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(16px, 4vw, 24px)", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", lineHeight: 1, margin: 0, wordBreak: "break-all" }}>
-        {value}
-      </p>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <p style={{ fontSize: "9.5px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: t.textMuted, fontFamily: "'DM Sans', sans-serif", margin: 0 }}>
+          {label}
+        </p>
+        <div
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: "8px",
+            background: bgs[trendDir],
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "12px",
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="dash-skeleton" style={{ height: 26, width: "70%", borderRadius: 6 }} />
+      ) : (
+        <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(17px, 4vw, 25px)", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", lineHeight: 1, margin: 0, wordBreak: "break-all" }}>
+          {value}
+        </p>
+      )}
+
       <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-        <span style={{ fontSize: "10px", fontWeight: 600, padding: "2px 8px", borderRadius: "99px", color: colors[trendDir], background: bgs[trendDir], whiteSpace: "nowrap" }}>
-          {trend}
-        </span>
-        {sub && <span style={{ fontSize: "10px", color: t.textMuted, whiteSpace: "nowrap" }}>{sub}</span>}
+        {loading ? (
+          <div className="dash-skeleton" style={{ height: 18, width: 60, borderRadius: 99 }} />
+        ) : (
+          <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 8px", borderRadius: "99px", color: colors[trendDir], background: bgs[trendDir], whiteSpace: "nowrap" }}>
+            {trend}
+          </span>
+        )}
+        {sub && !loading && <span style={{ fontSize: "10px", color: t.textMuted, whiteSpace: "nowrap" }}>{sub}</span>}
       </div>
     </div>
   );
 }
 
 // ─── CHART CARD WRAPPER ───────────────────────────────────────────────────
-function ChartCard({ title, sub, children, style = {} }) {
+function ChartCard({ title, sub, children, style = {}, accent }) {
   const { t } = useTheme();
   return (
     <div
+      className="dash-card dash-fade-in"
       style={{
-        borderRadius: "14px",
-        padding: "16px",
+        borderRadius: "16px",
+        padding: "18px",
         display: "flex",
         flexDirection: "column",
         background: t.bgCard,
         border: `1px solid ${t.border}`,
-        transition: "background 0.25s ease, border-color 0.25s ease",
+        transition: "background 0.25s ease, border-color 0.25s ease, box-shadow 0.2s ease, transform 0.2s ease",
         minWidth: 0,
         overflow: "hidden",
         ...style,
       }}
     >
-      <div style={{ marginBottom: "14px" }}>
-        <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "14px", color: t.textPrimary, margin: 0 }}>
-          {title}
-        </h3>
-        {sub && <p style={{ fontSize: "11px", color: t.textMuted, marginTop: "2px", marginBottom: 0 }}>{sub}</p>}
+      <div style={{ marginBottom: "14px", display: "flex", alignItems: "center", gap: "9px" }}>
+        {accent && (
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: accent, flexShrink: 0, boxShadow: `0 0 0 3px ${accent}22` }} />
+        )}
+        <div>
+          <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "14px", color: t.textPrimary, margin: 0 }}>
+            {title}
+          </h3>
+          {sub && <p style={{ fontSize: "11px", color: t.textMuted, marginTop: "2px", marginBottom: 0 }}>{sub}</p>}
+        </div>
       </div>
       {children}
+    </div>
+  );
+}
+
+function ChartSkeleton({ height = 220 }) {
+  const { t } = useTheme();
+  return (
+    <div style={{ height, display: "flex", alignItems: "flex-end", gap: "8px", padding: "0 4px" }}>
+      {[40, 65, 50, 80, 55, 70].map((h, i) => (
+        <div
+          key={i}
+          className="dash-skeleton"
+          style={{ flex: 1, height: `${h}%`, borderRadius: "6px 6px 0 0" }}
+        />
+      ))}
     </div>
   );
 }
@@ -589,9 +663,9 @@ function ChartCard({ title, sub, children, style = {} }) {
 // ─── REVENUE CHART (dynamic — last 6 months from real orders) ─────────────
 function RevenueChart({ monthly, loading }) {
   const { t } = useTheme();
-  const tooltipDefaults = { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody };
+  const tooltipDefaults = { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody, padding: 10, cornerRadius: 8, displayColors: false };
 
-  if (loading) return <p style={{ color: t.textMuted, fontSize: 12 }}>Loading revenue…</p>;
+  if (loading) return <ChartSkeleton height={220} />;
 
   const labels = monthly.map((m) => m.label);
   const values = monthly.map((m) => m.total);
@@ -615,15 +689,12 @@ function RevenueChart({ monthly, loading }) {
   return <div style={{ height: 220 }}><Bar data={data} options={options} /></div>;
 }
 
-// ─── ORDER DONUT (dynamic — computed directly from live orders array) ─────
-// Simplified to 3 real-world states for an offline/in-person business:
-// Completed (sale finalized), Pending (payment/order not finalized yet),
-// Cancelled. "Processing"/"Delivered" are shipping-era concepts we don't need.
+// ─── ORDER DONUT ────────────────────────────────────────────────────────
 function OrderDonut({ orders, loading }) {
   const { t } = useTheme();
-  const tooltipDefaults = { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody };
+  const tooltipDefaults = { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody, padding: 10, cornerRadius: 8 };
 
-  if (loading) return <p style={{ color: t.textMuted, fontSize: 12 }}>Loading order status…</p>;
+  if (loading) return <ChartSkeleton height={220} />;
 
   const completed = orders.filter((o) => o.status === "Completed").length;
   const pending = orders.filter((o) => o.status === "Pending").length;
@@ -647,10 +718,10 @@ function OrderDonut({ orders, loading }) {
   return <div style={{ height: 220 }}><Doughnut data={data} options={options} /></div>;
 }
 
-// ─── STOCK BAR (dynamic — shared products, no own fetch) ──────────────────
+// ─── STOCK BAR ─────────────────────────────────────────────────────────
 function StockBar({ products, loading }) {
   const { t } = useTheme();
-  const tooltipDefaults = { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody };
+  const tooltipDefaults = { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody, padding: 10, cornerRadius: 8 };
   const palette = [t.orange, t.green, t.blue, t.accentLight, "#a855f7"];
   const top5 = (products || []).slice(0, 5);
 
@@ -672,17 +743,17 @@ function StockBar({ products, loading }) {
       y: { grid: { display: false }, ticks: { color: t.textMuted, font: { size: 11 } } },
     },
   };
-  if (loading) return <p style={{ color: t.textMuted, fontSize: 12 }}>Loading stock data...</p>;
-  if (!top5.length) return <p style={{ color: t.textMuted, fontSize: 12 }}>No products found.</p>;
+  if (loading) return <ChartSkeleton height={210} />;
+  if (!top5.length) return <p style={{ color: t.textMuted, fontSize: 12, textAlign: "center", padding: "40px 0" }}>No products found.</p>;
   return <div style={{ height: 210 }}><Bar data={data} options={options} /></div>;
 }
 
-// ─── CUSTOMER GROWTH AREA (dynamic — unique customers from real orders) ───
+// ─── CUSTOMER GROWTH AREA ──────────────────────────────────────────────
 function CustomerArea({ growth, loading }) {
   const { t } = useTheme();
-  const tooltipDefaults = { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody };
+  const tooltipDefaults = { backgroundColor: t.tooltipBg, borderColor: t.tooltipBorder, borderWidth: 1, titleColor: t.tooltipTitle, bodyColor: t.tooltipBody, padding: 10, cornerRadius: 8 };
 
-  if (loading) return <p style={{ color: t.textMuted, fontSize: 12 }}>Loading customer growth…</p>;
+  if (loading) return <ChartSkeleton height={150} />;
 
   const data = {
     labels: growth.map((g) => g.label),
@@ -704,7 +775,7 @@ function CustomerArea({ growth, loading }) {
   return <div style={{ height: 150 }}><Line data={data} options={options} /></div>;
 }
 
-// ─── ORDERS / INVOICES TABLE (dynamic — real orders, latest 5) ────────────
+// ─── ORDERS / INVOICES TABLE ──────────────────────────────────────────
 function InvoicesTable({ orders, loading }) {
   const { t } = useTheme();
   const statusStyle = {
@@ -713,21 +784,29 @@ function InvoicesTable({ orders, loading }) {
     Cancelled: { color: t.red, bg: t.redBg },
   };
 
-  if (loading) return <p style={{ color: t.textMuted, fontSize: 12 }}>Loading recent orders…</p>;
+  if (loading) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="dash-skeleton" style={{ height: 30, borderRadius: 6 }} />
+        ))}
+      </div>
+    );
+  }
 
   const latest = [...orders]
     .sort((a, b) => (getOrderDate(b)?.getTime() || 0) - (getOrderDate(a)?.getTime() || 0))
     .slice(0, 5);
 
-  if (!latest.length) return <p style={{ color: t.textMuted, fontSize: 12 }}>No orders yet.</p>;
+  if (!latest.length) return <p style={{ color: t.textMuted, fontSize: 12, textAlign: "center", padding: "30px 0" }}>No orders yet.</p>;
 
   return (
     <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", minWidth: "280px" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", minWidth: "320px" }}>
         <thead>
           <tr style={{ borderBottom: `1px solid ${t.border}` }}>
-            {["Order", "Customer", "Amount"].map((h) => (
-              <th key={h} style={{ textAlign: "left", paddingBottom: "10px", fontSize: "9px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted, fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>
+            {["Order", "Customer", "Amount", "Status"].map((h) => (
+              <th key={h} style={{ textAlign: h === "Amount" || h === "Status" ? "right" : "left", paddingBottom: "10px", fontSize: "9px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted, fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>
                 {h}
               </th>
             ))}
@@ -737,11 +816,20 @@ function InvoicesTable({ orders, loading }) {
           {latest.map((o, i) => {
             const style = statusStyle[o.status] || { color: t.textMuted, bg: `${t.textMuted}18` };
             return (
-              <tr key={o.orderId || o._id || i} style={{ borderBottom: i < latest.length - 1 ? `1px solid ${t.borderLight}` : "none" }}>
-                <td style={{ padding: "9px 0", fontFamily: "monospace", fontSize: "10px", color: t.textMuted, whiteSpace: "nowrap" }}>{o.orderId || o._id || "—"}</td>
-                <td style={{ padding: "9px 8px 9px 0", fontWeight: 500, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", maxWidth: "90px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.customer || "—"}</td>
-                <td style={{ padding: "9px 8px 9px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>{inr(o.amount)}</td>
-                
+              <tr
+                key={o.orderId || o._id || i}
+                style={{ borderBottom: i < latest.length - 1 ? `1px solid ${t.borderLight}` : "none", transition: "background 0.15s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = `${t.accent}08`; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              >
+                <td style={{ padding: "10px 0", fontFamily: "monospace", fontSize: "10px", color: t.textMuted, whiteSpace: "nowrap" }}>{o.orderId || o._id || "—"}</td>
+                <td style={{ padding: "10px 8px 10px 0", fontWeight: 500, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", maxWidth: "90px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.customer || "—"}</td>
+                <td style={{ padding: "10px 8px 10px 0", fontWeight: 700, color: t.textPrimary, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap", textAlign: "right" }}>{inr(o.amount)}</td>
+                <td style={{ padding: "10px 0 10px 8px", textAlign: "right" }}>
+                  <span style={{ fontSize: "9.5px", fontWeight: 700, padding: "3px 8px", borderRadius: "99px", color: style.color, background: style.bg, whiteSpace: "nowrap" }}>
+                    {o.status || "—"}
+                  </span>
+                </td>
               </tr>
             );
           })}
@@ -753,11 +841,11 @@ function InvoicesTable({ orders, loading }) {
 
 // ─── RESPONSIVE STYLES ─────────────────────────────────────────────────────
 const styles = `
-  .dash-kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .dash-kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .dash-main-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
   .dash-charts-col { display: flex; flex-direction: column; gap: 12px; }
-  .dash-charts-row-1 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-  .dash-charts-row-2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .dash-charts-row-1 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .dash-charts-row-2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .dash-ai-sticky { position: static; }
 
   @media (min-width: 700px) {
@@ -776,12 +864,61 @@ const styles = `
     .dash-kpi-grid { gap: 6px; }
     .dash-charts-row-1, .dash-charts-row-2 { gap: 8px; }
   }
+
+  .dash-card:hover {
+    box-shadow: 0 8px 24px -12px rgba(0,0,0,0.18);
+    transform: translateY(-2px);
+  }
+
+  .dash-fade-in {
+    animation: dashFadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes dashFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .dash-skeleton {
+    background: linear-gradient(90deg, rgba(128,128,128,0.12) 25%, rgba(128,128,128,0.22) 37%, rgba(128,128,128,0.12) 63%);
+    background-size: 400% 100%;
+    animation: dashShimmer 1.4s ease infinite;
+  }
+
+  @keyframes dashShimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .dash-pulse-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    display: inline-block;
+    animation: dashPulse 1.8s ease infinite;
+  }
+
+  @keyframes dashPulse {
+    0% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+    70% { box-shadow: 0 0 0 5px transparent; opacity: 0.7; }
+    100% { box-shadow: 0 0 0 0 transparent; opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dash-fade-in, .dash-skeleton, .dash-pulse-dot { animation: none !important; }
+    .dash-card:hover { transform: none !important; }
+  }
 `;
 
 // ─── DASHBOARD PAGE ─────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { t } = useTheme();
-  const { loading, error, stats, products, orders } = useDashboardData();
+  const { loading, error, stats, products, orders, lastUpdated } = useDashboardData();
+  const [, forceTick] = useState(0);
+
+  // re-render every 30s so "X ago" stays fresh
+  useEffect(() => {
+    const id = setInterval(() => forceTick((n) => n + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const monthlyRevenue = buildMonthlyRevenue(orders);
   const customerGrowth = buildCustomerGrowth(orders);
@@ -790,47 +927,72 @@ export default function Dashboard() {
   return (
     <>
       <style>{styles}</style>
-      <div style={{ display: "flex", flexDirection: "column", gap: "14px", minWidth: 0, overflow: "hidden" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0, overflow: "hidden" }}>
 
         {/* Page Header */}
-        <div>
-          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(20px, 6vw, 28px)", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", transition: "color 0.25s ease", margin: 0 }}>
-            Dashboard
-          </h1>
-          <p style={{ fontSize: "12px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
-            {error ? error : "Welcome back — here's your business at a glance"}
-          </p>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+          <div>
+            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(20px, 6vw, 28px)", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em", transition: "color 0.25s ease", margin: 0 }}>
+              Dashboard
+            </h1>
+            <p style={{ fontSize: "12px", color: error ? t.red : t.textMuted, marginTop: "4px", marginBottom: 0 }}>
+              {error ? error : "Welcome back — here's your business at a glance"}
+            </p>
+          </div>
+
+          {!error && (
+            <div
+              style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                fontSize: "10.5px", fontWeight: 600, color: t.textMuted,
+                padding: "5px 10px", borderRadius: "99px",
+                background: t.bgCard, border: `1px solid ${t.border}`,
+                fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap",
+              }}
+            >
+              <span className="dash-pulse-dot" style={{ background: loading ? t.orange : t.green }} />
+              {loading ? "Syncing…" : `Updated ${timeAgo(lastUpdated)}`}
+            </div>
+          )}
         </div>
 
         {/* KPI Row */}
         <div className="dash-kpi-grid">
           <KpiCard
+            icon="💰"
             label="Total Revenue"
-            value={loading ? "…" : inr(kpis.totalRevenue)}
-            trend={loading ? "…" : `${kpis.revenueTrendPct >= 0 ? "↑" : "↓"} ${Math.abs(kpis.revenueTrendPct)}%`}
+            value={inr(kpis.totalRevenue)}
+            trend={`${kpis.revenueTrendPct >= 0 ? "↑" : "↓"} ${Math.abs(kpis.revenueTrendPct)}%`}
             trendDir={kpis.revenueTrendPct >= 0 ? "up" : "down"}
             sub="vs last month"
+            loading={loading}
           />
           <KpiCard
+            icon="🧾"
             label="Total Orders"
-            value={loading ? "…" : kpis.totalOrders.toLocaleString("en-IN")}
-            trend={loading ? "…" : `${kpis.ordersTrendPct >= 0 ? "↑" : "↓"} ${Math.abs(kpis.ordersTrendPct)}%`}
+            value={kpis.totalOrders.toLocaleString("en-IN")}
+            trend={`${kpis.ordersTrendPct >= 0 ? "↑" : "↓"} ${Math.abs(kpis.ordersTrendPct)}%`}
             trendDir={kpis.ordersTrendPct >= 0 ? "up" : "down"}
             sub="this month"
+            loading={loading}
           />
           <KpiCard
+            icon="👥"
             label="Customers"
-            value={loading ? "…" : kpis.uniqueCustomers.toLocaleString("en-IN")}
-            trend={loading ? "…" : `+${kpis.newCustomersThisMonth} new`}
+            value={kpis.uniqueCustomers.toLocaleString("en-IN")}
+            trend={`+${kpis.newCustomersThisMonth} new`}
             trendDir="neu"
             sub="this month"
+            loading={loading}
           />
           <KpiCard
+            icon="⏳"
             label="Pending Invoices"
-            value={loading ? "…" : inr(kpis.pendingAmount)}
-            trend={loading ? "…" : `${kpis.overdueCount} overdue`}
+            value={inr(kpis.pendingAmount)}
+            trend={`${kpis.overdueCount} overdue`}
             trendDir={kpis.overdueCount > 0 ? "down" : "up"}
             sub="needs attention"
+            loading={loading}
           />
         </div>
 
@@ -839,20 +1001,20 @@ export default function Dashboard() {
           <div className="dash-charts-col">
 
             <div className="dash-charts-row-1">
-              <ChartCard title="Revenue Overview" sub="Monthly — last 6 months">
+              <ChartCard title="Revenue Overview" sub="Monthly — last 6 months" accent={t.accent}>
                 <RevenueChart monthly={monthlyRevenue} loading={loading} />
               </ChartCard>
-              <ChartCard title="Order Status" sub="Live breakdown">
+              <ChartCard title="Order Status" sub="Live breakdown" accent={t.green}>
                 <OrderDonut orders={orders} loading={loading} />
               </ChartCard>
             </div>
 
             <div className="dash-charts-row-2">
-              <ChartCard title="Stock Levels" sub="Top 5 products">
+              <ChartCard title="Stock Levels" sub="Top 5 products" accent={t.orange}>
                 <StockBar products={products} loading={loading} />
               </ChartCard>
 
-              <ChartCard title="Customer Growth" sub="Last 5 months">
+              <ChartCard title="Customer Growth" sub="Last 5 months" accent={t.blue}>
                 <CustomerArea growth={customerGrowth} loading={loading} />
                 <div style={{ marginTop: "12px", display: "flex", gap: "20px", flexWrap: "wrap" }}>
                   {[
@@ -867,7 +1029,7 @@ export default function Dashboard() {
                 </div>
               </ChartCard>
 
-              <ChartCard title="Recent Orders" sub="Latest 5 transactions">
+              <ChartCard title="Recent Orders" sub="Latest 5 transactions" accent="#a855f7">
                 <InvoicesTable orders={orders} loading={loading} />
               </ChartCard>
             </div>
