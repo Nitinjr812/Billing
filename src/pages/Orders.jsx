@@ -641,48 +641,76 @@ function InvoiceViewModal({ invoice, onClose, t }) {
   );
 }
 
-// ─── VOICE LAUNCHER — a single mic button first, like Gemini/Assistant-style
-// voice entry points, that expands into the full transcript panel only once
-// the shopkeeper actually wants to speak or type the bill. ──────────────
-function VoiceLauncher({ listening, onTapMic, onTypeInstead, t }) {
+// ─── VOICE PANEL — one button. Tap to talk, tap again to stop.
+// Transcript box is always visible right below it (no extra "type instead"
+// step, no launcher-then-panel jump, no checkbox clutter).
+function VoicePanel({ listening, unsupported, transcript, setTranscript, onToggleMic, onParse, parsing, t }) {
   return (
     <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
-      padding: "28px 16px", borderRadius: 16,
-      background: `${t.accent}08`, border: `1px dashed ${t.accent}40`,
+      display: "flex", flexDirection: "column", gap: 10,
+      padding: 14, borderRadius: 14,
+      background: `${t.accent}08`, border: `1px solid ${t.accent}25`,
     }}>
-      <button
-        onClick={onTapMic}
-        aria-label="Speak your bill"
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button
+          onClick={onToggleMic}
+          aria-label={listening ? "Stop listening" : "Speak your bill"}
+          disabled={unsupported}
+          style={{
+            position: "relative", width: 52, height: 52, borderRadius: "50%", flexShrink: 0,
+            background: listening ? t.red : t.accent, color: "#fff", border: "none",
+            cursor: unsupported ? "not-allowed" : "pointer", opacity: unsupported ? 0.5 : 1,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: `0 6px 16px ${(listening ? t.red : t.accent)}40`,
+          }}
+        >
+          {listening && (
+            <span style={{
+              position: "absolute", inset: -7, borderRadius: "50%",
+              border: `2px solid ${t.red}`, animation: "micPulse 1.6s ease-out infinite",
+            }} />
+          )}
+          <Icon id={listening ? "stop" : "mic"} size={22} />
+        </button>
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>
+            {unsupported ? "Voice not supported on this browser" : listening ? "Listening… tap to stop" : "Tap to speak your bill"}
+          </p>
+          <p style={{ fontSize: 11, color: t.textMuted, margin: "2px 0 0" }}>
+            {unsupported ? "Type your bill below instead" : "Or just type below"}
+          </p>
+        </div>
+      </div>
+
+      <textarea
+        className="ui-input"
+        value={transcript}
+        onChange={(e) => setTranscript(e.target.value)}
+        placeholder='e.g. "Rahul Sharma, 2 Laptop Stand, 1 Wireless Mouse"'
+        rows={2}
         style={{
-          position: "relative", width: 64, height: 64, borderRadius: "50%",
-          background: t.accent, color: "#fff", border: "none", cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: `0 8px 20px ${t.accent}40`,
+          width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
+          border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 12px",
+          fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif",
+          outline: "none", resize: "vertical",
+        }}
+      />
+
+      <button
+        onClick={onParse}
+        disabled={parsing || !transcript.trim()}
+        style={{
+          alignSelf: "flex-start",
+          display: "flex", alignItems: "center", gap: 6,
+          background: "transparent", color: t.accent, border: `1.5px solid ${t.accent}`,
+          borderRadius: 10, padding: "8px 14px", fontSize: 12, fontWeight: 600,
+          cursor: parsing || !transcript.trim() ? "not-allowed" : "pointer",
+          opacity: parsing || !transcript.trim() ? 0.5 : 1,
         }}
       >
-        {listening && (
-          <span style={{
-            position: "absolute", inset: -8, borderRadius: "50%",
-            border: `2px solid ${t.accent}`, animation: "micPulse 1.6s ease-out infinite",
-          }} />
-        )}
-        <Icon id="mic" size={26} />
+        <Icon id="sparkle" size={13} />
+        {parsing ? "Filling in…" : "Auto-fill bill"}
       </button>
-      <p style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>
-        {listening ? "Listening…" : "Tap to speak your bill"}
-      </p>
-      <p style={{ fontSize: 11, color: t.textMuted, margin: 0, textAlign: "center", maxWidth: 260 }}>
-        Say the customer name and items — noise suppression stays on for busy shop floors.
-      </p>
-      <button
-        onClick={onTypeInstead}
-        style={{
-          display: "flex", alignItems: "center", gap: 6, marginTop: 4,
-          background: "transparent", border: "none", color: t.textMuted,
-          fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
-        }}
-      ><Icon id="keyboard" size={13} /> Or type it instead</button>
     </div>
   );
 }
@@ -704,15 +732,13 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
   const [sellerGstin, setSellerGstin] = useState("");
 
   const [listening, setListening] = useState(false);
+  const [voiceUnsupported, setVoiceUnsupported] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
-  const [autoParseEnabled, setAutoParseEnabled] = useState(true);
-  const [voicePanelOpen, setVoicePanelOpen] = useState(false); // launcher → full panel
   const recognitionRef = useRef(null);
   const shouldListenRef = useRef(false);
-  const micStreamRef = useRef(null);
   const autoParseTimerRef = useRef(null);
   const handleParseRef = useRef(null);
 
@@ -739,46 +765,38 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
       .catch(() => {});
   }, [token]);
 
+  // Detect browser support up front so mobile users (especially iOS Safari,
+  // which has NO SpeechRecognition support at all) see a clear message
+  // instead of a mic button that silently does nothing.
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) setVoiceUnsupported(true);
+  }, []);
+
   useEffect(() => {
     return () => {
       shouldListenRef.current = false;
       recognitionRef.current?.stop();
       clearTimeout(autoParseTimerRef.current);
-      micStreamRef.current?.getTracks().forEach((tr) => tr.stop());
     };
   }, []);
 
-  // Ask the browser/OS for noise suppression + echo cancellation + auto gain
-  // BEFORE SpeechRecognition grabs the mic. Web Speech API manages its own
-  // audio internally and doesn't accept a custom stream, but priming
-  // getUserMedia with these constraints first nudges Chrome/Edge into
-  // applying its noise-suppression pipeline for the session, which helps a
-  // lot in a noisy shop with several customers talking.
-  const primeMicrophone = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
-      micStreamRef.current = stream;
-    } catch {
-      // ignore — recognition will still ask for its own mic permission
-    }
-  };
-
-  const releaseMicPrime = () => {
-    micStreamRef.current?.getTracks().forEach((tr) => tr.stop());
-    micStreamRef.current = null;
-  };
-
-  const startListening = async () => {
+  const startListening = () => {
     setErr("");
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setErr("Voice recognition only works in Chrome or Edge browser");
+      setVoiceUnsupported(true);
+      setErr("Voice input isn't supported on this browser — try Chrome on Android, or just type the bill below.");
       return;
     }
 
-    await primeMicrophone();
+    // NOTE: we deliberately do NOT open our own getUserMedia stream and hold
+    // it here. SpeechRecognition captures the mic itself, and on most mobile
+    // browsers the mic can only be held by one consumer at a time — an extra
+    // open stream silently starves SpeechRecognition of audio, which is why
+    // voice input used to "hear nothing" on phones while working fine on a
+    // laptop. SpeechRecognition manages echo cancellation/noise handling on
+    // its own, so no priming is needed.
 
     const recognition = new SpeechRecognition();
     recognition.lang = "en-IN";
@@ -788,7 +806,10 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
     recognition.onstart = () => setListening(true);
 
     recognition.onerror = (e) => {
-      if (e.error !== "no-speech" && e.error !== "aborted") {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        setErr("Microphone permission was denied — allow mic access in your browser settings.");
+        shouldListenRef.current = false;
+      } else if (e.error !== "no-speech" && e.error !== "aborted") {
         setErr("Error capturing voice, please try again");
       }
     };
@@ -802,7 +823,6 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
         }
       } else {
         setListening(false);
-        releaseMicPrime();
       }
     };
 
@@ -817,20 +837,21 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
         setTranscript((prev) => (prev ? prev + " " + newText.trim() : newText.trim()));
 
         // Auto re-parse a couple seconds after the customer's speech pauses,
-        // so the bill fills itself in without needing a manual tap every time —
-        // useful when it's noisy and the cashier's hands are full.
-        if (autoParseEnabled) {
-          clearTimeout(autoParseTimerRef.current);
-          autoParseTimerRef.current = setTimeout(() => {
-            handleParseRef.current?.();
-          }, 2200);
-        }
+        // so the bill fills itself in without needing a manual tap every time.
+        clearTimeout(autoParseTimerRef.current);
+        autoParseTimerRef.current = setTimeout(() => {
+          handleParseRef.current?.();
+        }, 2200);
       }
     };
 
     recognitionRef.current = recognition;
     shouldListenRef.current = true;
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      setErr("Could not start microphone — please try again.");
+    }
   };
 
   const stopListening = () => {
@@ -838,18 +859,11 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
     recognitionRef.current?.stop();
     clearTimeout(autoParseTimerRef.current);
     setListening(false);
-    releaseMicPrime();
   };
 
-  // Launcher actions — tapping the big mic button both opens the full
-  // panel and starts capturing right away, same as Gemini/Assistant-style
-  // voice entry points; "type instead" opens the panel without the mic.
-  const handleLauncherMicTap = () => {
-    setVoicePanelOpen(true);
-    startListening();
-  };
-  const handleLauncherTypeInstead = () => {
-    setVoicePanelOpen(true);
+  const handleToggleMic = () => {
+    if (listening) stopListening();
+    else startListening();
   };
 
   const handleParse = async () => {
@@ -996,74 +1010,16 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
           }}><Icon id="close" size={13} /></button>
         </div>
 
-        {!voicePanelOpen ? (
-          <VoiceLauncher
-            listening={listening}
-            onTapMic={handleLauncherMicTap}
-            onTypeInstead={handleLauncherTypeInstead}
-            t={t}
-          />
-        ) : (
-          <div style={{
-            background: `${t.accent}08`, border: `1px solid ${t.accent}30`,
-            borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 10,
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
-                Speak or type the full bill
-              </p>
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: t.textMuted, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={autoParseEnabled}
-                  onChange={(e) => setAutoParseEnabled(e.target.checked)}
-                />
-                Auto-fill on pause
-              </label>
-            </div>
-            <textarea
-              className="ui-input"
-              value={transcript}
-              onChange={(e) => setTranscript(e.target.value)}
-              placeholder='e.g. "Customer Rahul Sharma, email rahul@gmail.com, 2 Laptop Stand, 1 Wireless Mouse"'
-              rows={3}
-              style={{ ...inputStyle, resize: "vertical", fontFamily: "'DM Sans', sans-serif" }}
-            />
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button
-                onClick={listening ? stopListening : startListening}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  background: listening ? t.red : t.accent, color: "#fff", border: "none",
-                  borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                }}
-              >
-                <Icon id={listening ? "stop" : "mic"} size={14} />
-                {listening ? "Stop Listening" : "Speak Bill"}
-              </button>
-              <button
-                onClick={handleParse}
-                disabled={parsing || !transcript.trim()}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  background: "transparent", color: t.accent, border: `1.5px solid ${t.accent}`,
-                  borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600,
-                  cursor: parsing || !transcript.trim() ? "not-allowed" : "pointer",
-                  opacity: parsing || !transcript.trim() ? 0.5 : 1,
-                }}
-              >
-                <Icon id="sparkle" size={14} />
-                {parsing ? "Parsing..." : "Auto-fill from text"}
-              </button>
-            </div>
-            {listening && (
-              <p style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: t.accent, margin: 0 }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: t.accent, animation: "micPulse 1.4s ease-out infinite" }} />
-                Listening... speak now (noise suppression active)
-              </p>
-            )}
-          </div>
-        )}
+        <VoicePanel
+          listening={listening}
+          unsupported={voiceUnsupported}
+          transcript={transcript}
+          setTranscript={setTranscript}
+          onToggleMic={handleToggleMic}
+          onParse={handleParse}
+          parsing={parsing}
+          t={t}
+        />
 
         {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>{err}</p>}
 
