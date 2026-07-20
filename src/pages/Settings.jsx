@@ -22,12 +22,13 @@ const BILLING = {
 };
 
 const NAV_ITEMS = [
-  { id: "profile",       label: "Profile",        icon: "◉" },
-  { id: "notifications", label: "Notifications",  icon: "◎" },
-  { id: "integrations",  label: "Integrations",   icon: "◫" },
-  { id: "team",          label: "Team & Access",  icon: "◬" },
-  { id: "billing",       label: "Billing",        icon: "◷" },
-  { id: "security",      label: "Security",       icon: "◰" },
+  { id: "profile",       label: "Profile" },
+  { id: "tax",           label: "Tax & GST" },
+  { id: "notifications", label: "Notifications" },
+  { id: "integrations",  label: "Integrations" },
+  { id: "team",          label: "Team & Access" },
+  { id: "billing",       label: "Billing" },
+  { id: "security",      label: "Security" },
 ];
 
 const NOTIF_LABELS = {
@@ -58,7 +59,65 @@ function useApi() {
   };
 }
 
-// ─── REUSABLE ATOMS (unchanged) ───────────────────────────────────────────
+// ─── ICONS — single stroke-set, used consistently across nav ─────────────
+function NavIcon({ id, size = 17 }) {
+  const paths = {
+    profile: (
+      <>
+        <circle cx="12" cy="8.2" r="3.4" />
+        <path d="M5 20c1.1-3.6 3.9-5.6 7-5.6s5.9 2 7 5.6" />
+      </>
+    ),
+    tax: (
+      <>
+        <path d="M6.5 3h8l3 3v15h-11z" />
+        <path d="M9 8.5h6M9 12h6M9 15.5h3.5" />
+      </>
+    ),
+    notifications: (
+      <>
+        <path d="M12 4.2a4.8 4.8 0 0 0-4.8 4.8v3.3L5.5 15.8h13l-1.7-3.5V9a4.8 4.8 0 0 0-4.8-4.8z" />
+        <path d="M10.2 18.6a1.8 1.8 0 0 0 3.6 0" />
+      </>
+    ),
+    integrations: (
+      <>
+        <rect x="4" y="4" width="6.5" height="6.5" rx="1.4" />
+        <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.4" />
+        <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.4" />
+        <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.4" />
+      </>
+    ),
+    team: (
+      <>
+        <circle cx="9" cy="8.3" r="3" />
+        <circle cx="17" cy="9.3" r="2.3" />
+        <path d="M3.6 19.8c.8-3.1 2.9-4.9 5.4-4.9s4.6 1.8 5.4 4.9" />
+        <path d="M14.8 15.3c1.9.4 3.4 2.1 3.9 4.5" />
+      </>
+    ),
+    billing: (
+      <>
+        <rect x="3" y="6" width="18" height="12.5" rx="2" />
+        <path d="M3 10h18" />
+        <path d="M7 15h4" />
+      </>
+    ),
+    security: (
+      <>
+        <path d="M12 3.2l6.8 2.7v5.6c0 4.3-2.9 7.3-6.8 8.6-3.9-1.3-6.8-4.3-6.8-8.6V5.9z" />
+        <path d="M9.3 12l1.9 1.9 3.5-3.8" />
+      </>
+    ),
+  };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      {paths[id]}
+    </svg>
+  );
+}
+
+// ─── REUSABLE ATOMS ────────────────────────────────────────────────────
 function SectionTitle({ children, sub }) {
   const { t } = useTheme();
   return (
@@ -72,12 +131,14 @@ function SectionTitle({ children, sub }) {
 function Card({ children, style = {} }) {
   const { t } = useTheme();
   return (
-    <div style={{
-      background: t.bgCard, border: `1px solid ${t.border}`,
-      borderRadius: 16, padding: "20px 24px",
-      transition: "background 0.25s ease, border-color 0.25s ease",
-      ...style,
-    }}>
+    <div
+      className="ui-card"
+      style={{
+        background: t.bgCard, border: `1px solid ${t.border}`,
+        borderRadius: 16, padding: "20px 24px",
+        ...style,
+      }}
+    >
       {children}
     </div>
   );
@@ -96,18 +157,19 @@ function Input({ value, onChange, placeholder, type = "text", disabled }) {
   const { t } = useTheme();
   return (
     <input
+      className="ui-input"
       type={type}
       value={value}
       onChange={onChange}
       placeholder={placeholder}
       disabled={disabled}
       style={{
+        "--focus-ring": `${t.accent}33`,
         width: "100%", boxSizing: "border-box",
         background: disabled ? `${t.border}30` : `${t.accent}08`, border: `1px solid ${t.border}`,
         borderRadius: 10, padding: "9px 12px",
         fontSize: 13, color: t.textPrimary,
         fontFamily: "'DM Sans', sans-serif", outline: "none",
-        transition: "border-color 0.2s",
       }}
     />
   );
@@ -165,7 +227,7 @@ function PrimaryBtn({ children, onClick, danger, small, disabled }) {
         fontSize: small ? 11 : 13, fontWeight: 600,
         fontFamily: "'DM Sans', sans-serif", cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.6 : 1,
-        transition: "opacity 0.15s",
+        transition: "opacity 0.15s, transform 0.1s",
       }}
     >{children}</button>
   );
@@ -190,21 +252,94 @@ function GhostBtn({ children, onClick, small, disabled, danger }) {
   );
 }
 
-function AvatarCircle({ initials, size = 40 }) {
+// ─── SIGNATURE ELEMENT: the "official seal" avatar ────────────────────
+// A dashed ring rotates slowly around the initials, echoing an invoice
+// stamp — the one motif this billing product is built to be remembered by.
+function SealAvatar({ initials, size = 40 }) {
   const { t } = useTheme();
+  const ring = size + 14;
   return (
-    <div style={{
-      width: size, height: size, borderRadius: "50%",
-      background: `${t.accent}22`, border: `2px solid ${t.accent}44`,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Syne', sans-serif", fontWeight: 900,
-      fontSize: size * 0.32, color: t.accent, flexShrink: 0,
-    }}>{initials}</div>
+    <div style={{ position: "relative", width: ring, height: ring, flexShrink: 0 }}>
+      <svg
+        width={ring} height={ring} viewBox={`0 0 ${ring} ${ring}`}
+        style={{ position: "absolute", inset: 0, animation: "sealSpin 18s linear infinite" }}
+      >
+        <circle
+          cx={ring / 2} cy={ring / 2} r={ring / 2 - 1.5}
+          fill="none" stroke={t.accent} strokeOpacity="0.45"
+          strokeWidth="1.4" strokeDasharray="2.5 4.5" strokeLinecap="round"
+        />
+      </svg>
+      <div style={{
+        position: "absolute", top: 7, left: 7,
+        width: size, height: size, borderRadius: "50%",
+        background: `${t.accent}1f`, border: `1.5px solid ${t.accent}55`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "'Syne', sans-serif", fontWeight: 900,
+        fontSize: size * 0.32, color: t.accent,
+      }}>{initials}</div>
+    </div>
   );
 }
 
 function getInitials(name = "") {
   return name.trim().split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() || "U";
+}
+
+// ─── FLOATING TOAST — replaces inline "✅ / ❌" strings ─────────────────
+function Toast({ message, onDismiss }) {
+  const { t } = useTheme();
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => onDismiss?.(), 3200);
+    return () => clearTimeout(timer);
+  }, [message]);
+
+  if (!message) return null;
+  const isError = message.startsWith("❌");
+  const text = message.replace(/^✅\s*|^❌\s*/, "");
+
+  return (
+    <div style={{
+      position: "fixed", bottom: 24, right: 24, zIndex: 1000,
+      display: "flex", alignItems: "center", gap: 10,
+      background: t.bgCard, borderLeft: `3px solid ${isError ? t.red : t.green}`,
+      border: `1px solid ${t.border}`,
+      borderRadius: 12, padding: "12px 18px", minWidth: 240, maxWidth: 360,
+      boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+      fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: t.textPrimary,
+      animation: "toastIn 0.25s ease",
+    }}>
+      <span style={{ color: isError ? t.red : t.green, fontWeight: 700 }}>{isError ? "!" : "✓"}</span>
+      <span style={{ flex: 1 }}>{text}</span>
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        style={{ background: "none", border: "none", color: t.textMuted, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}
+      >✕</button>
+    </div>
+  );
+}
+
+// ─── SKELETON LOADER — shimmering placeholder shapes ──────────────────
+function Skeleton({ width = "100%", height = 14, radius = 8, style = {} }) {
+  const { t } = useTheme();
+  return (
+    <div
+      className="ui-skeleton"
+      style={{
+        width, height, borderRadius: radius,
+        background: `linear-gradient(90deg, ${t.border}55 25%, ${t.border}99 37%, ${t.border}55 63%)`,
+        backgroundSize: "400% 100%",
+        ...style,
+      }}
+    />
+  );
+}
+
+function SkeletonCircle({ size = 40, style = {} }) {
+  return <Skeleton width={size} height={size} radius="50%" style={style} />;
 }
 
 // ─── SECTION: PROFILE (DYNAMIC) ───────────────────────────────────────────
@@ -216,14 +351,13 @@ function ProfileSection() {
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
-    api("/settings/profile").then(setForm).catch((e) => setMsg(e.message));
+    api("/settings/profile").then(setForm).catch((e) => setMsg("❌ " + e.message));
   }, []);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const handleSave = async () => {
     setSaving(true);
-    setMsg("");
     try {
       await api("/settings/profile", {
         method: "PUT",
@@ -237,7 +371,32 @@ function ProfileSection() {
     }
   };
 
-  if (!form) return <p style={{ color: t.textMuted, fontSize: 13 }}>Loading profile...</p>;
+  if (!form) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <SectionTitle sub="Manage your personal information">Profile</SectionTitle>
+        <Card>
+          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+            <SkeletonCircle size={64} />
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+              <Skeleton width={140} height={16} />
+              <Skeleton width={100} height={12} />
+            </div>
+          </div>
+        </Card>
+        <Card>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 20px" }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i}>
+                <Skeleton width={70} height={9} style={{ marginBottom: 8 }} />
+                <Skeleton height={34} radius={10} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -245,7 +404,7 @@ function ProfileSection() {
 
       <Card>
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <AvatarCircle initials={getInitials(form.name)} size={64} />
+          <SealAvatar initials={getInitials(form.name)} size={64} />
           <div style={{ flex: 1 }}>
             <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 16, color: t.textPrimary }}>{form.name}</p>
             <p style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
@@ -283,12 +442,127 @@ function ProfileSection() {
           </div>
         </div>
 
-        {msg && <p style={{ fontSize: 12, marginTop: 12, color: msg.startsWith("✅") ? t.green : t.red }}>{msg}</p>}
-
         <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
           <PrimaryBtn onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save Changes"}</PrimaryBtn>
         </div>
       </Card>
+
+      <Toast message={msg} onDismiss={() => setMsg("")} />
+    </div>
+  );
+}
+
+// ─── SECTION: TAX & GST (DYNAMIC) ─────────────────────────────────────────
+const GST_RATES = [0, 5, 12, 18, 28];
+
+function TaxSection() {
+  const { t } = useTheme();
+  const { user } = useAuth();
+  const api = useApi();
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    api("/settings/tax").then(setForm).catch((e) => setMsg("❌ " + e.message));
+  }, []);
+
+  const isOwner = user?.role === "owner";
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await api("/settings/tax", {
+        method: "PUT",
+        body: JSON.stringify({
+          gstin: form.gstin,
+          defaultGstRate: form.defaultGstRate,
+        }),
+      });
+      setForm({ gstin: res.gstin, defaultGstRate: res.defaultGstRate });
+      setMsg("✅ Tax settings updated!");
+    } catch (e) {
+      setMsg("❌ " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!form) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <SectionTitle sub="Set your shop's GSTIN and default GST rate for invoices">Tax & GST</SectionTitle>
+        <Card>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 20px" }}>
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i}>
+                <Skeleton width={90} height={9} style={{ marginBottom: 8 }} />
+                <Skeleton height={34} radius={10} />
+              </div>
+            ))}
+          </div>
+          <Skeleton width="70%" height={11} style={{ marginTop: 16 }} />
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <SectionTitle sub="Set your shop's GSTIN and default GST rate for invoices">Tax & GST</SectionTitle>
+
+      <Card>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 20px" }}>
+          <div>
+            <Label>GSTIN</Label>
+            <Input
+              value={form.gstin}
+              onChange={(e) => setForm((f) => ({ ...f, gstin: e.target.value.toUpperCase() }))}
+              placeholder="e.g. 08ABCDE1234F1Z5"
+              disabled={!isOwner}
+            />
+          </div>
+          <div>
+            <Label>Default GST Rate</Label>
+            <select
+              className="ui-input"
+              value={form.defaultGstRate}
+              onChange={(e) => setForm((f) => ({ ...f, defaultGstRate: Number(e.target.value) }))}
+              disabled={!isOwner}
+              style={{
+                width: "100%", boxSizing: "border-box",
+                background: !isOwner ? `${t.border}30` : `${t.accent}08`,
+                border: `1px solid ${t.border}`,
+                borderRadius: 10, padding: "9px 12px",
+                fontSize: 13, color: t.textPrimary,
+                fontFamily: "'DM Sans', sans-serif", outline: "none",
+              }}
+            >
+              {GST_RATES.map((rate) => (
+                <option key={rate} value={rate}>{rate}%</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <p style={{ fontSize: 11, color: t.textMuted, marginTop: 12 }}>
+          This default rate auto-applies to new invoices. You can still adjust it on any individual invoice.
+        </p>
+
+        {!isOwner && (
+          <p style={{ fontSize: 11, color: t.textMuted, marginTop: 8 }}>
+            Only the shop owner can edit tax settings.
+          </p>
+        )}
+
+        {isOwner && (
+          <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+            <PrimaryBtn onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save Changes"}</PrimaryBtn>
+          </div>
+        )}
+      </Card>
+
+      <Toast message={msg} onDismiss={() => setMsg("")} />
     </div>
   );
 }
@@ -302,14 +576,13 @@ function NotificationsSection() {
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
-    api("/settings/notifications").then(setSettings).catch((e) => setMsg(e.message));
+    api("/settings/notifications").then(setSettings).catch((e) => setMsg("❌ " + e.message));
   }, []);
 
   const toggle = (key) => setSettings((s) => ({ ...s, [key]: !s[key] }));
 
   const handleSave = async () => {
     setSaving(true);
-    setMsg("");
     try {
       await api("/settings/notifications", { method: "PUT", body: JSON.stringify(settings) });
       setMsg("✅ Preferences saved!");
@@ -320,7 +593,27 @@ function NotificationsSection() {
     }
   };
 
-  if (!settings) return <p style={{ color: t.textMuted, fontSize: 13 }}>Loading...</p>;
+  if (!settings) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <SectionTitle sub="Choose what alerts and updates you receive">Notifications</SectionTitle>
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          {Array.from({ length: 6 }).map((_, i, arr) => (
+            <div key={i} style={{
+              display: "flex", alignItems: "center", gap: 16, padding: "16px 24px",
+              borderBottom: i < arr.length - 1 ? `1px solid ${t.border}` : "none",
+            }}>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                <Skeleton width={`${45 + (i % 3) * 8}%`} height={12} />
+                <Skeleton width={`${65 + (i % 2) * 10}%`} height={10} />
+              </div>
+              <Skeleton width={40} height={22} radius={99} />
+            </div>
+          ))}
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -341,11 +634,11 @@ function NotificationsSection() {
         ))}
       </Card>
 
-      {msg && <p style={{ fontSize: 12, color: msg.startsWith("✅") ? t.green : t.red }}>{msg}</p>}
-
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <PrimaryBtn onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save Preferences"}</PrimaryBtn>
       </div>
+
+      <Toast message={msg} onDismiss={() => setMsg("")} />
     </div>
   );
 }
@@ -399,7 +692,7 @@ function TeamSection() {
   const [msg, setMsg] = useState("");
   const [copied, setCopied] = useState(false);
 
-  const loadTeam = () => api("/settings/team").then(setMembers).catch((e) => setMsg(e.message));
+  const loadTeam = () => api("/settings/team").then(setMembers).catch((e) => setMsg("❌ " + e.message));
 
   useEffect(() => { loadTeam(); }, []);
 
@@ -409,7 +702,7 @@ function TeamSection() {
       await api(`/settings/team/${memberId}`, { method: "DELETE" });
       loadTeam();
     } catch (e) {
-      alert("❌ " + e.message);
+      setMsg("❌ " + e.message);
     }
   };
 
@@ -421,7 +714,36 @@ function TeamSection() {
 
   const roleColors = { owner: t.accent, staff: t.blue };
 
-  if (!members) return <p style={{ color: t.textMuted, fontSize: 13 }}>Loading team...</p>;
+  if (!members) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <SectionTitle sub="Manage team members and their access">Team & Access</SectionTitle>
+        <Card>
+          <Skeleton width={140} height={9} style={{ marginBottom: 10 }} />
+          <Skeleton width="90%" height={11} style={{ marginBottom: 12 }} />
+          <div style={{ display: "flex", gap: 10 }}>
+            <Skeleton height={34} radius={10} style={{ flex: 1 }} />
+            <Skeleton width={72} height={34} radius={10} />
+          </div>
+        </Card>
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          {Array.from({ length: 3 }).map((_, i, arr) => (
+            <div key={i} style={{
+              display: "flex", alignItems: "center", gap: 14, padding: "14px 24px",
+              borderBottom: i < arr.length - 1 ? `1px solid ${t.border}` : "none",
+            }}>
+              <SkeletonCircle size={36} />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                <Skeleton width={120} height={12} />
+                <Skeleton width={160} height={10} />
+              </div>
+              <Skeleton width={54} height={18} radius={99} />
+            </div>
+          ))}
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -432,7 +754,7 @@ function TeamSection() {
         <Card>
           <Label>Invite Team Member</Label>
           <p style={{ fontSize: 12, color: t.textMuted, margin: "6px 0 10px" }}>
-            Naye staff member ko ye Shop ID do — wo signup page pe "Join Shop (Staff)" se join kar sakte hain.
+            Share this Shop ID with new staff — they can join from the signup page using "Join Shop (Staff)".
           </p>
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}><Input value={user.shopId} disabled /></div>
@@ -441,8 +763,6 @@ function TeamSection() {
         </Card>
       )}
 
-      {msg && <p style={{ fontSize: 12, color: t.red }}>{msg}</p>}
-
       {/* Member list */}
       <Card style={{ padding: 0, overflow: "hidden" }}>
         {members.map((m, i) => (
@@ -450,7 +770,7 @@ function TeamSection() {
             display: "flex", alignItems: "center", gap: 14, padding: "14px 24px",
             borderBottom: i < members.length - 1 ? `1px solid ${t.border}` : "none",
           }}>
-            <AvatarCircle initials={getInitials(m.name)} size={36} />
+            <SealAvatar initials={getInitials(m.name)} size={36} />
             <div style={{ flex: 1 }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>{m.name}</p>
               <p style={{ fontSize: 11, color: t.textMuted }}>{m.email}</p>
@@ -467,6 +787,8 @@ function TeamSection() {
           </div>
         ))}
       </Card>
+
+      <Toast message={msg} onDismiss={() => setMsg("")} />
     </div>
   );
 }
@@ -506,10 +828,8 @@ function SecuritySection() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [deleting, setDeleting] = useState(false);
-  const [deleteMsg, setDeleteMsg] = useState("");
 
   const handleChangePassword = async () => {
-    setMsg("");
     if (pw.next !== pw.confirm) return setMsg("❌ New passwords don't match");
     setSaving(true);
     try {
@@ -539,17 +859,16 @@ function SecuritySection() {
 
     const confirmText = window.prompt('Type "DELETE" to confirm account deletion');
     if (confirmText !== "DELETE") {
-      if (confirmText !== null) alert("Confirmation text didn't match. Account not deleted.");
+      if (confirmText !== null) setMsg("❌ Confirmation text didn't match. Account not deleted.");
       return;
     }
 
     setDeleting(true);
-    setDeleteMsg("");
     try {
       await api("/settings/account", { method: "DELETE" });
       logout();
     } catch (e) {
-      setDeleteMsg("❌ " + e.message);
+      setMsg("❌ " + e.message);
       setDeleting(false);
     }
   };
@@ -565,7 +884,6 @@ function SecuritySection() {
           <Input type="password" placeholder="New password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
           <Input type="password" placeholder="Confirm new password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} />
         </div>
-        {msg && <p style={{ fontSize: 12, marginTop: 10, color: msg.startsWith("✅") ? t.green : t.red }}>{msg}</p>}
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
           <PrimaryBtn onClick={handleChangePassword} disabled={saving}>{saving ? "Updating..." : "Update Password"}</PrimaryBtn>
         </div>
@@ -594,8 +912,9 @@ function SecuritySection() {
             {deleting ? "Deleting..." : "Delete Account"}
           </PrimaryBtn>
         </div>
-        {deleteMsg && <p style={{ fontSize: 12, marginTop: 10, color: t.red }}>{deleteMsg}</p>}
       </Card>
+
+      <Toast message={msg} onDismiss={() => setMsg("")} />
     </div>
   );
 }
@@ -607,6 +926,7 @@ export default function Settings() {
 
   const sectionMap = {
     profile:       <ProfileSection />,
+    tax:           <TaxSection />,
     notifications: <NotificationsSection />,
     integrations:  <IntegrationsSection />,
     team:          <TeamSection />,
@@ -621,6 +941,39 @@ export default function Settings() {
         @media (max-width: 760px) { .settings-layout { grid-template-columns: 1fr; } }
         .settings-nav-mobile { display: none; }
         @media (max-width: 760px) { .settings-nav-desktop { display: none; } .settings-nav-mobile { display: flex; } }
+
+        .ui-card { transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.25s ease; }
+        .ui-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,0,0,0.08); }
+
+        .ui-input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+        .ui-input:focus { border-color: ${t.accent} !important; box-shadow: 0 0 0 3px var(--focus-ring, ${t.accent}33); }
+        .ui-input:disabled { cursor: not-allowed; }
+
+        .settings-section-active { animation: sectionFade 0.28s ease; }
+
+        @keyframes sectionFade {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes sealSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .ui-skeleton { animation: shimmer 1.4s ease-in-out infinite; }
+        @keyframes shimmer {
+          0% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ui-card, .ui-input, .settings-section-active, .ui-skeleton { animation: none !important; transition: none !important; }
+          .ui-card:hover { transform: none; }
+        }
       `}</style>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -632,13 +985,17 @@ export default function Settings() {
         <div className="settings-nav-mobile" style={{ gap: 6, overflowX: "auto", paddingBottom: 4, scrollbarWidth: "none" }}>
           {NAV_ITEMS.map((n) => (
             <button key={n.id} onClick={() => setActive(n.id)} style={{
-              flexShrink: 0, padding: "6px 14px", borderRadius: 99,
+              flexShrink: 0, display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 14px", borderRadius: 99,
               border: `1.5px solid ${active === n.id ? t.accent : t.border}`,
               background: active === n.id ? `${t.accent}15` : "transparent",
               color: active === n.id ? t.accent : t.textMuted,
               fontSize: 12, fontWeight: 600, cursor: "pointer",
               fontFamily: "'DM Sans', sans-serif", transition: "all 0.15s",
-            }}>{n.label}</button>
+            }}>
+              <NavIcon id={n.id} size={14} />
+              {n.label}
+            </button>
           ))}
         </div>
 
@@ -657,13 +1014,13 @@ export default function Settings() {
                   fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
                   textAlign: "left", transition: "all 0.15s",
                 }}>
-                  <span style={{ fontSize: 15 }}>{n.icon}</span>
+                  <NavIcon id={n.id} />
                   {n.label}
                 </button>
               ))}
             </Card>
           </div>
-          <div>{sectionMap[active]}</div>
+          <div key={active} className="settings-section-active">{sectionMap[active]}</div>
         </div>
       </div>
     </>

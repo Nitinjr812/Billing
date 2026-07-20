@@ -6,6 +6,7 @@ import {
 } from "chart.js";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import { useTheme } from "../components/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement,
@@ -49,6 +50,16 @@ function timeAgo(date) {
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   return `${hrs}h ago`;
+}
+
+// Professional, time-aware first message for the AI Analyst widget.
+function getGreeting(name) {
+  const hour = new Date().getHours();
+  const timeGreeting =
+    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const namePart = name ? `, ${name}` : "";
+
+  return `${timeGreeting}${namePart}! I'm Alex, your AI business assistant. I'm connected to your live store data and ready to help — ask me about orders, stock levels, revenue, or anything else on your mind.`;
 }
 
 // last `count` calendar months (oldest → newest), each keyed by "YYYY-M"
@@ -286,11 +297,9 @@ Let the user know data may not be real-time, but assist with general business qu
 }
 
 function AiChatWidget({ t }) {
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      text: "👋 Hi! I'm your AI Analyst — connected to live data. Ask me about orders, stock, revenue, or alerts!",
-    },
+  const { user } = useAuth();
+  const [messages, setMessages] = useState(() => [
+    { role: "assistant", text: getGreeting(user?.name) },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -299,6 +308,20 @@ function AiChatWidget({ t }) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  // AuthContext restores the user from localStorage asynchronously, so on
+  // first render `user` may still be null. Once it resolves, refresh the
+  // greeting with the real name — but only if the user hasn't started
+  // chatting yet (don't clobber an in-progress conversation).
+  useEffect(() => {
+    if (!user?.name) return;
+    setMessages((prev) => {
+      if (prev.length === 1 && prev[0].role === "assistant") {
+        return [{ role: "assistant", text: getGreeting(user.name) }];
+      }
+      return prev;
+    });
+  }, [user?.name]);
 
   const sendMessage = async (text) => {
     const userText = text || input.trim();
@@ -383,7 +406,7 @@ function AiChatWidget({ t }) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.textPrimary, margin: 0, lineHeight: 1.2 }}>
-            AI Analyst
+            Alex · AI Analyst
           </p>
           <p style={{ fontSize: "10px", color: t.green, fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: "4px" }}>
             <span className="dash-pulse-dot" style={{ background: t.green }} /> Online
@@ -959,8 +982,7 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-
-        {/* KPI Row */}
+ 
         <div className="dash-kpi-grid">
           <KpiCard
             icon="💰"
