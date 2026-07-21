@@ -1,101 +1,118 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
 
-// ─── DUMMY NOTIFICATIONS ──────────────────────────────────────────────────────
-const INITIAL_NOTIFICATIONS = [
-  {
-    id: 1,
-    type: "revenue",
-    icon: "📈",
-    title: "Revenue Milestone Hit!",
-    message: "May revenue crossed ₹4,80,000 — highest this quarter.",
-    time: "2 min ago",
-    read: false,
-  },
-  {
-    id: 2,
-    type: "order",
-    icon: "📦",
-    title: "12 New Orders Received",
-    message: "Orders #1284 to #1296 are waiting for processing.",
-    time: "18 min ago",
-    read: false,
-  },
-  {
-    id: 3,
-    type: "inventory",
-    icon: "⚠️",
-    title: "Low Stock Alert",
-    message: "Prod-Theta is down to 18 units. Reorder soon.",
-    time: "1 hr ago",
-    read: false,
-  },
-  {
-    id: 4,
-    type: "customer",
-    icon: "👤",
-    title: "New Customer Registered",
-    message: "Simran Kaur signed up and placed her first order.",
-    time: "3 hr ago",
-    read: false,
-  },
-  {
-    id: 5,
-    type: "inventory",
-    icon: "🚫",
-    title: "Out of Stock: Prod-Omega",
-    message: "Prod-Omega is completely out of stock. 10 pending orders affected.",
-    time: "5 hr ago",
-    read: true,
-  },
-  {
-    id: 6,
-    type: "order",
-    icon: "❌",
-    title: "Cancellation Spike Detected",
-    message: "Cancellation rate reached 7.1% today — above your 6% threshold.",
-    time: "Yesterday",
-    read: true,
-  },
-  {
-    id: 7,
-    type: "report",
-    icon: "📊",
-    title: "Weekly Report Ready",
-    message: "Your Apr 28 – May 4 performance report has been generated.",
-    time: "2 days ago",
-    read: true,
-  },
-  {
-    id: 8,
-    type: "revenue",
-    icon: "💳",
-    title: "Invoice Overdue",
-    message: "3 invoices worth ₹38,500 are overdue. Follow up with clients.",
-    time: "2 days ago",
-    read: true,
-  },
-];
+const BACKEND = "https://billing-backend-tawny.vercel.app";
+
+// ─── Turn the backend's alert buckets into a flat notification list ───────
+// data looks like: { outOfStock: [product, ...], lowStock: [...], slowMoving: [...] }
+// Each product has at least: _id, name, stock, price.
+//
+// _id is built as "<type>-<product._id>" so that:
+//   1. Re-scanning doesn't create duplicate notifications for the same issue.
+//   2. Read/unread status survives a rescan (see scanStock below).
+function buildNotifications(data) {
+  const built = [];
+
+  (data?.outOfStock || []).forEach((p) => {
+    built.push({
+      _id: `outOfStock-${p._id}`,
+      type: "outOfStock",
+      productName: p.name,
+      message: `${p.name} is completely out of stock.`,
+      createdAt: new Date().toISOString(),
+    });
+  });
+
+  (data?.lowStock || []).forEach((p) => {
+    built.push({
+      _id: `lowStock-${p._id}`,
+      type: "lowStock",
+      productName: p.name,
+      message: `${p.name} is down to ${p.stock} units. Reorder soon.`,
+      createdAt: new Date().toISOString(),
+    });
+  });
+
+  (data?.slowMoving || []).forEach((p) => {
+    built.push({
+      _id: `slowMoving-${p._id}`,
+      type: "slowMoving",
+      productName: p.name,
+      message: `${p.name} hasn't sold in a while. Consider a discount or promo.`,
+      createdAt: new Date().toISOString(),
+    });
+  });
+
+  return built;
+}
 
 const NotificationContext = createContext(null);
 
 export function NotificationProvider({ children }) {
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState([]);
+  const [readIds, setReadIds] = useState(() => new Set());
+  const [loading, setLoading] = useState(true);
+
+  // scanStock = fetch the latest alerts from the backend and rebuild the
+  // notification list. Called on mount, by the "🔄 Rescan Stock" button,
+  // and by StockAlertPopup after a suggestion is requested.
+  const scanStock = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${BACKEND}/api/products/alerts`);
+      const data = await res.json();
+      const built = buildNotifications(data);
+
+      setNotifications((prev) =>
+        built.map((n) => ({
+          ...n,
+          read: readIds.has(n._id) || prev.find((p) => p._id === n._id)?.read || false,
+        }))
+      );
+    } catch {
+      // Network/API hiccup — keep whatever notifications we already had
+      // instead of wiping the list to empty.
+    } finally {
+      setLoading(false);
+    }
+  }, [readIds]);
+
+  useEffect(() => {
+    scanStock();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const markAsRead = (id) => {
+    setReadIds((prev) => new Set(prev).add(id));
+    setNotifications((prev) =>
+      prev.map((n) => (n._id === id ? { ...n, read: true } : n))
+    );
+  };
+
+  const markAllAsRead = () => {
+    setNotifications((prev) => {
+      const ids = prev.map((n) => n._id);
+      setReadIds((r) => new Set([...r, ...ids]));
+      return prev.map((n) => ({ ...n, read: true }));
+    });
+  };
+
+  const clearAll = () => {
+    setNotifications([]);
+  };
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const markAsRead = (id) =>
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
-
-  const markAllAsRead = () =>
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-
-  const clearAll = () => setNotifications([]);
-
   return (
     <NotificationContext.Provider
-      value={{ notifications, unreadCount, markAsRead, markAllAsRead, clearAll }}
+      value={{
+        notifications,
+        unreadCount,
+        loading,
+        markAsRead,
+        markAllAsRead,
+        clearAll,
+        scanStock,
+      }}
     >
       {children}
     </NotificationContext.Provider>

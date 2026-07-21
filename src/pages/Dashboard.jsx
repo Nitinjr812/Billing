@@ -7,6 +7,7 @@ import {
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import { useTheme } from "../components/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import StockAlertPopup from "../components/StockAlertPopup";
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement,
@@ -375,7 +376,7 @@ function AiChatWidget({ t }) {
         overflow: "hidden",
         transition: "background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease",
       }}
-    >
+    > 
       <div
         style={{
           padding: "14px 16px",
@@ -953,6 +954,7 @@ export default function Dashboard() {
 
   return (
     <>
+    <StockAlertPopup />
       <style>{styles}</style>
       <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0, overflow: "hidden" }}>
 
