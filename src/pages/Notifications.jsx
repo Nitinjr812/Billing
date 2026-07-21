@@ -40,16 +40,21 @@ function timeAgo(dateStr) {
     return `${days}d ago`;
 }
 
-// ─── STAT PILL ──────────────────────────────────────────────────────────────
-function StatPill({ label, value, color, bg, icon }) {
+// ─── STAT PILL — now a clickable filter, not just a display ───────────────
+function StatPill({ label, value, color, bg, icon, onClick, isActive }) {
     return (
-        <div style={{
-            display: "flex", alignItems: "center", gap: 12,
-            padding: "14px 18px", borderRadius: 16,
-            background: bg, flex: "1 1 150px", minWidth: 130,
-            border: `1px solid ${color}22`,
-            transition: "transform 0.18s ease, box-shadow 0.18s ease",
-        }}>
+        <button
+            onClick={onClick}
+            style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "14px 18px", borderRadius: 16,
+                background: bg, flex: "1 1 150px", minWidth: 130,
+                border: `1.5px solid ${isActive ? color : `${color}22`}`,
+                boxShadow: isActive ? `0 0 0 3px ${color}22` : "none",
+                cursor: "pointer", textAlign: "left", fontFamily: "inherit",
+                transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease",
+            }}
+        >
             <div style={{
                 width: 34, height: 34, borderRadius: 11, flexShrink: 0,
                 background: `${color}20`, display: "flex", alignItems: "center",
@@ -59,13 +64,11 @@ function StatPill({ label, value, color, bg, icon }) {
                 <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 21, color, lineHeight: 1.1 }}>{value}</span>
                 <span style={{ fontSize: 10.5, fontWeight: 600, color, opacity: 0.8, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{label}</span>
             </div>
-        </div>
+        </button>
     );
 }
 
 // ─── SKELETON PRIMITIVES ────────────────────────────────────────────────────
-// A moving shimmer sweep (not just a flat pulse) — reads as an intentional
-// loading state rather than a placeholder that forgot to load.
 function Shimmer({ style }) {
     return <div className="skeleton-shimmer" style={style} />;
 }
@@ -144,8 +147,7 @@ const responsiveStyles = `
   .notif-filter-btn { position: relative; }
   .notif-filter-btn .count-badge { transition: transform 0.15s ease, background 0.15s ease; }
   .notif-filter-btn:hover .count-badge { transform: scale(1.08); }
-
-  .rescan-btn:active svg, .rescan-btn.spinning span.spin-icon { animation: spin 0.6s linear; }
+  .notif-stats-row button:hover { transform: translateY(-1px); }
 
   @keyframes fade-in {
     from { opacity: 0; transform: translateY(4px); }
@@ -173,15 +175,18 @@ const responsiveStyles = `
 export default function Notifications() {
     const { t } = useTheme();
     const { notifications, unreadCount, loading, markAsRead, markAllAsRead, clearAll, scanStock } = useNotifications();
-    const [filter, setFilter] = useState("all");
+    const [filter, setFilter] = useState("all");       // type filter: all | outOfStock | lowStock | slowMoving
+    const [readFilter, setReadFilter] = useState("all"); // read-state filter: all | unread | read
     const [hoveredId, setHoveredId] = useState(null);
     const [rescanning, setRescanning] = useState(false);
 
     const safeNotifications = Array.isArray(notifications) ? notifications : [];
 
-    const filtered = filter === "all"
-        ? safeNotifications
-        : safeNotifications.filter((n) => n.type === filter);
+    // Both filters apply together — e.g. "Low Stock" tab + "Unread" stat
+    // shows only unread low-stock notifications.
+    const filtered = safeNotifications
+        .filter((n) => filter === "all" || n.type === filter)
+        .filter((n) => readFilter === "all" || (readFilter === "unread" ? !n.read : n.read));
 
     const readCount = safeNotifications.length - unreadCount;
     const tabs = Object.keys(TYPE_LABELS);
@@ -200,8 +205,19 @@ export default function Notifications() {
         }
     };
 
-    // CSS custom properties derived from the theme, used inside the injected
-    // <style> block above (media queries / keyframes can't read inline styles).
+    const resetAllFilters = () => {
+        setFilter("all");
+        setReadFilter("all");
+    };
+
+    const toggleReadFilter = (value) => {
+        setReadFilter((prev) => (prev === value ? "all" : value));
+    };
+
+    const toggleTypeFilter = (value) => {
+        setFilter((prev) => (prev === value ? "all" : value));
+    };
+
     const cssVars = {
         "--accent": t.accent,
         "--accent-fade": `${t.accent}40`,
@@ -276,7 +292,7 @@ export default function Notifications() {
                     </div>
                 </div>
 
-                {/* ── STATS ROW ── */}
+                {/* ── STATS ROW — now clickable filters too ── */}
                 <div className="notif-stats-row" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {loading ? (
                         <>
@@ -284,10 +300,30 @@ export default function Notifications() {
                         </>
                     ) : (
                         <>
-                            <StatPill label="Total" value={safeNotifications.length} color={t.accent} bg={`${t.accent}12`} icon="🔔" />
-                            <StatPill label="Unread" value={unreadCount} color="#d97706" bg="#fef3c7" icon="✉️" />
-                            <StatPill label="Read" value={readCount} color="#16a34a" bg="#dcfce7" icon="✅" />
-                            <StatPill label="Out of Stock" value={countFor("outOfStock")} color="#dc2626" bg="#fee2e2" icon="🚨" />
+                            <StatPill
+                                label="Total" value={safeNotifications.length}
+                                color={t.accent} bg={`${t.accent}12`} icon="🔔"
+                                onClick={resetAllFilters}
+                                isActive={filter === "all" && readFilter === "all"}
+                            />
+                            <StatPill
+                                label="Unread" value={unreadCount}
+                                color="#d97706" bg="#fef3c7" icon="✉️"
+                                onClick={() => toggleReadFilter("unread")}
+                                isActive={readFilter === "unread"}
+                            />
+                            <StatPill
+                                label="Read" value={readCount}
+                                color="#16a34a" bg="#dcfce7" icon="✅"
+                                onClick={() => toggleReadFilter("read")}
+                                isActive={readFilter === "read"}
+                            />
+                            <StatPill
+                                label="Out of Stock" value={countFor("outOfStock")}
+                                color="#dc2626" bg="#fee2e2" icon="🚨"
+                                onClick={() => toggleTypeFilter("outOfStock")}
+                                isActive={filter === "outOfStock"}
+                            />
                         </>
                     )}
                 </div>
@@ -297,7 +333,7 @@ export default function Notifications() {
                     display: "grid", gridTemplateColumns: "200px 1fr", gap: 16, alignItems: "start",
                 }}>
 
-                    {/* LEFT — Filter sidebar */}
+                    {/* LEFT — Filter sidebar (type only) */}
                     <div className="notif-filter-sidebar" style={{
                         position: "sticky", top: 88,
                         background: t.bgCard, border: `1px solid ${t.border}`,
@@ -349,6 +385,21 @@ export default function Notifications() {
                                 </button>
                             );
                         })}
+
+                        {readFilter !== "all" && (
+                            <button
+                                onClick={() => setReadFilter("all")}
+                                style={{
+                                    margin: "6px 18px 4px", padding: "6px 10px",
+                                    fontSize: 11, fontWeight: 600, borderRadius: 8,
+                                    border: `1px dashed ${t.border}`, background: "transparent",
+                                    color: t.textMuted, cursor: "pointer",
+                                    fontFamily: "'DM Sans', sans-serif",
+                                }}
+                            >
+                                ✕ Clear "{readFilter === "unread" ? "Unread" : "Read"}" filter
+                            </button>
+                        )}
                     </div>
 
                     {/* RIGHT — Notification feed */}
@@ -369,7 +420,18 @@ export default function Notifications() {
                             }}>
                                 <div style={{ fontSize: 40, marginBottom: 12 }}>🔔</div>
                                 <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 18, color: t.textPrimary, margin: 0 }}>Nothing here</p>
-                                <p style={{ fontSize: 13, color: t.textMuted, marginTop: 6 }}>No notifications in this category.</p>
+                                <p style={{ fontSize: 13, color: t.textMuted, marginTop: 6 }}>No notifications match your current filters.</p>
+                                {(filter !== "all" || readFilter !== "all") && (
+                                    <button
+                                        onClick={resetAllFilters}
+                                        style={{
+                                            marginTop: 14, padding: "7px 16px", borderRadius: 8,
+                                            border: `1px solid ${t.accent}`, color: t.accent,
+                                            background: `${t.accent}10`, fontSize: 12, fontWeight: 600,
+                                            cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+                                        }}
+                                    >Reset filters</button>
+                                )}
                             </div>
                         ) : (
                             filtered.map((n, i) => {
