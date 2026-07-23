@@ -165,6 +165,43 @@ function computeKpis(stats, orders) {
   };
 }
 
+// ─── Investment vs Profit — the "khata" math for the whole business ──────
+// Total Invested  = every rupee of goods bought from suppliers, whether
+//                    already paid or still pending (the stock is yours
+//                    either way, so it's a real cost).
+// Realized Revenue = only orders actually marked Completed. Pending orders
+//                    are money not in hand yet, so they don't count as
+//                    revenue until they clear.
+// Net Profit       = Realized Revenue − Total Invested.
+// The two "pending" numbers are shown separately so nothing is silently
+// hidden inside the profit figure — a pending payment to a supplier is a
+// debt you'll have to settle, and a pending payment from a customer is
+// money you're still owed.
+function computeBusinessHealth(orders, purchaseSummary) {
+  const realizedRevenue = orders
+    .filter((o) => o.status === "Completed")
+    .reduce((s, o) => s + (Number(o.amount) || 0), 0);
+
+  const customerPending = orders
+    .filter((o) => o.status === "Pending")
+    .reduce((s, o) => s + (Number(o.amount) || 0), 0);
+
+  const totalInvested = purchaseSummary?.totalPurchased || 0;
+  const supplierPaid = purchaseSummary?.totalPaid || 0;
+  const supplierPending = purchaseSummary?.totalPending || 0;
+
+  const netProfit = realizedRevenue - totalInvested;
+
+  return {
+    totalInvested,
+    supplierPaid,
+    supplierPending,
+    realizedRevenue,
+    customerPending,
+    netProfit,
+  };
+}
+
 // ─── live data hook (single source of truth for the whole dashboard) ──────
 function useDashboardData(pollMs = 60000) {
   const [state, setState] = useState({
@@ -174,6 +211,7 @@ function useDashboardData(pollMs = 60000) {
     products: [],
     orders: [],
     alerts: null,
+    purchaseSummary: { totalPurchased: 0, totalPaid: 0, totalPending: 0 },
     lastUpdated: null,
   });
 
@@ -182,11 +220,12 @@ function useDashboardData(pollMs = 60000) {
 
     async function load() {
       try {
-        const [ordersRes, statsRes, productsRes, alertsRes] = await Promise.all([
+        const [ordersRes, statsRes, productsRes, alertsRes, purchaseSummaryRes] = await Promise.all([
           fetch(`${BACKEND}/api/orders`),
           fetch(`${BACKEND}/api/orders/stats`),
           fetch(`${BACKEND}/api/products`),
           fetch(`${BACKEND}/api/products/alerts`),
+          fetch(`${BACKEND}/api/supplier-purchases/summary`),
         ]);
 
         if (!ordersRes.ok || !statsRes.ok || !productsRes.ok || !alertsRes.ok) {
@@ -200,6 +239,14 @@ function useDashboardData(pollMs = 60000) {
           alertsRes.json(),
         ]);
 
+        // Purchase/khata summary is treated as optional — if this route
+        // isn't deployed yet or fails, the rest of the dashboard still works.
+        let purchaseSummary = { totalPurchased: 0, totalPaid: 0, totalPending: 0 };
+        if (purchaseSummaryRes.ok) {
+          const psData = await purchaseSummaryRes.json();
+          purchaseSummary = psData?.overall || purchaseSummary;
+        }
+
         if (!cancelled) {
           setState({
             loading: false,
@@ -208,6 +255,7 @@ function useDashboardData(pollMs = 60000) {
             products: Array.isArray(products) ? products : [],
             orders: Array.isArray(orders) ? orders : [],
             alerts,
+            purchaseSummary,
             lastUpdated: new Date(),
           });
         }
@@ -638,6 +686,102 @@ function KpiCard({ icon, label, value, trend, trendDir, sub, loading }) {
   );
 }
 
+// ─── BUSINESS HEALTH CARD — Investment vs Profit, khata-style ────────────
+function BusinessHealthCard({ health, loading, t }) {
+  const isProfit = health.netProfit >= 0;
+
+  return (
+    <div
+      className="dash-card dash-fade-in"
+      style={{
+        borderRadius: "18px",
+        padding: "20px",
+        background: t.bgCard,
+        border: `1px solid ${t.border}`,
+        display: "flex",
+        flexDirection: "column",
+        gap: "16px",
+        transition: "background 0.25s ease, border-color 0.25s ease, box-shadow 0.2s ease, transform 0.2s ease",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "14px", color: t.textPrimary, margin: 0 }}>
+            Business Health
+          </h3>
+          <p style={{ fontSize: "11px", color: t.textMuted, margin: "2px 0 0" }}>Investment vs. Profit — live khata</p>
+        </div>
+        {!loading && (
+          <span style={{
+            fontSize: "11px", fontWeight: 700, padding: "4px 12px", borderRadius: "99px",
+            color: isProfit ? t.green : t.red,
+            background: isProfit ? t.greenBg : t.redBg,
+          }}>
+            {isProfit ? "In Profit" : "In Loss"}
+          </span>
+        )}
+      </div>
+
+      {/* Core 3: Invested → Revenue → Net Profit */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+        <div style={{ background: `${t.accent}08`, border: `1px solid ${t.border}`, borderRadius: 12, padding: "12px 14px" }}>
+          <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>Total Invested</p>
+          {loading ? (
+            <div className="dash-skeleton" style={{ height: 22, width: "70%", borderRadius: 6, marginTop: 6 }} />
+          ) : (
+            <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "clamp(16px, 4vw, 20px)", color: t.textPrimary, margin: "6px 0 0" }}>
+              {inr(health.totalInvested)}
+            </p>
+          )}
+          <p style={{ fontSize: 10, color: t.textMuted, margin: "3px 0 0" }}>stock purchased from suppliers</p>
+        </div>
+
+        <div style={{ background: t.greenBg, border: `1px solid ${t.border}`, borderRadius: 12, padding: "12px 14px" }}>
+          <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>Revenue (Completed)</p>
+          {loading ? (
+            <div className="dash-skeleton" style={{ height: 22, width: "70%", borderRadius: 6, marginTop: 6 }} />
+          ) : (
+            <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "clamp(16px, 4vw, 20px)", color: t.green, margin: "6px 0 0" }}>
+              {inr(health.realizedRevenue)}
+            </p>
+          )}
+          <p style={{ fontSize: 10, color: t.textMuted, margin: "3px 0 0" }}>stock already sold</p>
+        </div>
+
+        <div style={{ background: isProfit ? t.greenBg : t.redBg, border: `1px solid ${t.border}`, borderRadius: 12, padding: "12px 14px" }}>
+          <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>Net Profit</p>
+          {loading ? (
+            <div className="dash-skeleton" style={{ height: 22, width: "70%", borderRadius: 6, marginTop: 6 }} />
+          ) : (
+            <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "clamp(16px, 4vw, 20px)", color: isProfit ? t.green : t.red, margin: "6px 0 0" }}>
+              {isProfit ? "" : "-"}{inr(Math.abs(health.netProfit))}
+            </p>
+          )}
+          <p style={{ fontSize: 10, color: t.textMuted, margin: "3px 0 0" }}>revenue − invested</p>
+        </div>
+      </div>
+
+      {/* Pending flags — not folded into profit, shown as clear cash-flow alerts */}
+      {!loading && (health.supplierPending > 0 || health.customerPending > 0) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
+          {health.supplierPending > 0 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 12, color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>Owed to suppliers (already counted in invested)</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: t.red, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>{inr(health.supplierPending)}</span>
+            </div>
+          )}
+          {health.customerPending > 0 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 12, color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>Owed by customers (not yet in revenue)</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: t.orange, fontFamily: "'Syne', sans-serif", whiteSpace: "nowrap" }}>{inr(health.customerPending)}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── CHART CARD WRAPPER ───────────────────────────────────────────────────
 function ChartCard({ title, sub, children, style = {}, accent }) {
   const { t } = useTheme();
@@ -939,7 +1083,7 @@ const styles = `
 // ─── DASHBOARD PAGE ─────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { t } = useTheme();
-  const { loading, error, stats, products, orders, lastUpdated } = useDashboardData();
+  const { loading, error, stats, products, orders, purchaseSummary, lastUpdated } = useDashboardData();
   const [, forceTick] = useState(0);
 
   // re-render every 30s so "X ago" stays fresh
@@ -951,6 +1095,7 @@ export default function Dashboard() {
   const monthlyRevenue = buildMonthlyRevenue(orders);
   const customerGrowth = buildCustomerGrowth(orders);
   const kpis = computeKpis(stats, orders);
+  const businessHealth = computeBusinessHealth(orders, purchaseSummary);
 
   return (
     <>
@@ -1023,6 +1168,9 @@ export default function Dashboard() {
             loading={loading}
           />
         </div>
+
+        {/* Investment vs Profit — the "khata" view of the whole business */}
+        <BusinessHealthCard health={businessHealth} loading={loading} t={t} />
 
         {/* Main layout: Charts + AI Chat */}
         <div className="dash-main-layout">

@@ -37,7 +37,25 @@ function enrichSuppliers(suppliers, products) {
   });
 }
 
-// ─── live suppliers hook ────────────────────────────────────────────────
+// Merge in khata (purchase ledger) aggregates onto each supplier
+function enrichWithKhata(suppliers, purchaseSummaryPerSupplier) {
+  const bySupplierId = {};
+  purchaseSummaryPerSupplier.forEach((row) => {
+    bySupplierId[row._id] = row;
+  });
+  return suppliers.map((s) => {
+    const row = bySupplierId[s._id];
+    return {
+      ...s,
+      totalPurchased: row?.totalPurchased || 0,
+      totalPaid: row?.totalPaid || 0,
+      totalPending: row?.totalPending || 0,
+      purchaseCount: row?.purchaseCount || 0,
+    };
+  });
+}
+
+// ─── live suppliers hook (now also pulls purchase/khata summary) ───────
 function useSuppliersData(pollMs = 60000) {
   const [state, setState] = useState({ loading: true, error: null, suppliers: [] });
   const [refreshTick, setRefreshTick] = useState(0);
@@ -47,20 +65,31 @@ function useSuppliersData(pollMs = 60000) {
 
     async function load() {
       try {
-        const [supRes, prodRes] = await Promise.all([
+        const [supRes, prodRes, purchaseSummaryRes] = await Promise.all([
           fetch(`${BACKEND}/api/suppliers`),
           fetch(`${BACKEND}/api/products`),
+          fetch(`${BACKEND}/api/supplier-purchases/summary`),
         ]);
         if (!supRes.ok || !prodRes.ok) throw new Error("Request failed");
         const [suppliers, products] = await Promise.all([supRes.json(), prodRes.json()]);
+
+        // Purchase summary is optional — don't break the page if it 404s
+        let purchaseSummary = { perSupplier: [], overall: { totalPurchased: 0, totalPaid: 0, totalPending: 0 } };
+        if (purchaseSummaryRes.ok) {
+          purchaseSummary = await purchaseSummaryRes.json();
+        }
+
         if (!cancelled) {
+          const merged = enrichSuppliers(
+            Array.isArray(suppliers) ? suppliers : [],
+            Array.isArray(products) ? products : []
+          );
+          const withKhata = enrichWithKhata(merged, purchaseSummary.perSupplier || []);
           setState({
             loading: false,
             error: null,
-            suppliers: enrichSuppliers(
-              Array.isArray(suppliers) ? suppliers : [],
-              Array.isArray(products) ? products : []
-            ),
+            suppliers: withKhata,
+            overallKhata: purchaseSummary.overall || { totalPurchased: 0, totalPaid: 0, totalPending: 0 },
           });
         }
       } catch (err) {
@@ -76,6 +105,34 @@ function useSuppliersData(pollMs = 60000) {
   return { ...state, refresh: () => setRefreshTick((n) => n + 1) };
 }
 
+// ─── purchases-for-one-supplier hook (used inside the drawer) ─────────
+function useSupplierPurchases(supplierId) {
+  const [state, setState] = useState({ loading: true, error: null, purchases: [] });
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!supplierId) return;
+    let cancelled = false;
+
+    async function load() {
+      setState((s) => ({ ...s, loading: true }));
+      try {
+        const res = await fetch(`${BACKEND}/api/supplier-purchases?supplier=${supplierId}`);
+        if (!res.ok) throw new Error("Request failed");
+        const data = await res.json();
+        if (!cancelled) setState({ loading: false, error: null, purchases: Array.isArray(data) ? data : [] });
+      } catch (err) {
+        if (!cancelled) setState({ loading: false, error: "Could not load purchase history", purchases: [] });
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [supplierId, tick]);
+
+  return { ...state, refresh: () => setTick((n) => n + 1) };
+}
+
 // ─── ICONS — single stroke-set, used everywhere instead of emoji ──────────
 function Icon({ id, size = 14 }) {
   const paths = {
@@ -87,6 +144,8 @@ function Icon({ id, size = 14 }) {
     mail: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="M4 7l8 6 8-6" /></>,
     phone: <><path d="M6 3.5l2.7 1.2c.6.3.8 1 .5 1.6l-1 2c-.3.6 0 1.2.4 1.7 1 1.1 2.2 2.2 3.3 3.2.5.4 1.1.7 1.7.4l2-1c.6-.3 1.3-.1 1.6.5L18.5 16c.4.8.2 1.8-.5 2.3-1 .8-2.3 1.1-3.6.7-3.5-1-6.7-4.2-7.7-7.7-.4-1.3-.1-2.6.7-3.6.5-.7 1.5-.9 2.3-.5z" /></>,
     pin: <><path d="M12 21s-6.5-5.9-6.5-11a6.5 6.5 0 0 1 13 0c0 5.1-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.2" /></>,
+    rupee: <><path d="M6 4h12M6 4c4 0 7 1.6 7 4.5S10 13 6 13h9M6 13l7 7" /></>,
+    receipt: <><path d="M6 3h12v18l-2.5-1.6L13 21l-2.5-1.6L8 21l-2-1.6z" /><path d="M9 8h6M9 12h6" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -209,6 +268,32 @@ function StatusBadge({ status, t }) {
         Inactive: { color: t.red, bg: t.redBg },
     };
     const s = map[status] || map["Active"];
+    return (
+        <span
+            style={{
+                fontSize: "10px",
+                fontWeight: 600,
+                padding: "3px 9px",
+                borderRadius: "99px",
+                color: s.color,
+                background: s.bg,
+                whiteSpace: "nowrap",
+                display: "inline-block",
+            }}
+        >
+            {status}
+        </span>
+    );
+}
+
+// Purchase (khata) status badge — Paid / Partially Paid / Pending
+function PurchaseStatusBadge({ status, t }) {
+    const map = {
+        Paid: { color: t.green, bg: t.greenBg },
+        "Partially Paid": { color: t.orange, bg: t.orangeBg },
+        Pending: { color: t.red, bg: t.redBg },
+    };
+    const s = map[status] || map["Pending"];
     return (
         <span
             style={{
@@ -354,8 +439,10 @@ function SupplierFormModal({ initial, onClose, onSaved, onToast, existingCategor
           </div>
           <div>
             <label style={labelStyle}>Status</label>
-            <select className="ui-input" style={{ ...inputStyle, cursor: "pointer" }} value={status} onChange={(e) => setStatus(e.target.value)}>
-              {FORM_STATUSES.map((s) => <option key={s}>{s}</option>)}
+            <select className="ui-input" style={{ ...inputStyle, cursor: "pointer", colorScheme: "light dark" }} value={status} onChange={(e) => setStatus(e.target.value)}>
+              {FORM_STATUSES.map((s) => (
+                <option key={s} value={s} style={{ background: t.bgCard, color: t.textPrimary }}>{s}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -384,8 +471,10 @@ function SupplierFormModal({ initial, onClose, onSaved, onToast, existingCategor
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
             <label style={labelStyle}>Payment Terms</label>
-            <select className="ui-input" style={{ ...inputStyle, cursor: "pointer" }} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)}>
-              {PAYMENT_TERMS_OPTIONS.map((p) => <option key={p}>{p}</option>)}
+            <select className="ui-input" style={{ ...inputStyle, cursor: "pointer", colorScheme: "light dark" }} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)}>
+              {PAYMENT_TERMS_OPTIONS.map((p) => (
+                <option key={p} value={p} style={{ background: t.bgCard, color: t.textPrimary }}>{p}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -410,6 +499,507 @@ function SupplierFormModal({ initial, onClose, onSaved, onToast, existingCategor
           }}>{saving ? "Saving..." : isEdit ? "Save Changes" : "Add Supplier"}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── ADD PURCHASE MODAL — record a new purchase from this supplier ───────
+function AddPurchaseModal({ supplier, onClose, onSaved, onToast, t }) {
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [paidAmount, setPaidAmount] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const inputStyle = {
+    width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
+    border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 12px",
+    fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", outline: "none",
+    "--focus-ring": `${t.accent}33`,
+  };
+  const labelStyle = { fontSize: 11, color: t.textMuted, display: "block", marginBottom: 4 };
+  const pendingNow = Math.max(0, Number(amount || 0) - Number(paidAmount || 0));
+
+  // Quick action: mark the whole purchase as paid on the same day
+  const markFullyPaid = () => {
+    setPaidAmount(amount || "0");
+    setDueDate("");
+  };
+
+  const handleSave = async () => {
+    setErr("");
+    const amt = Number(amount);
+    const paid = Number(paidAmount) || 0;
+    if (!amt || amt <= 0) return setErr("Purchase amount is required");
+    if (paid > amt) return setErr("Paid amount can't be more than the total purchase amount");
+
+    setSaving(true);
+    try {
+      const res = await fetch(`${BACKEND}/api/supplier-purchases`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supplier: supplier._id,
+          description,
+          amount: amt,
+          paidAmount: paid,
+          date,
+          dueDate: paid < amt ? (dueDate || null) : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not save purchase");
+      onSaved?.();
+      onToast?.("✅ Purchase entry added to the ledger!");
+      onClose();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16,
+      overflowY: "auto",
+    }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16,
+        padding: 24, width: "100%", maxWidth: 420, display: "flex", flexDirection: "column",
+        gap: 14, maxHeight: "90vh", overflowY: "auto",
+        animation: "modalIn 0.2s ease",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 19, color: t.textPrimary, margin: 0 }}>
+              Add Purchase
+            </h3>
+            <p style={{ fontSize: 12, color: t.textMuted, margin: "2px 0 0" }}>from {supplier.name}</p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              width: 30, height: 30, borderRadius: 8, background: `${t.accent}12`,
+              border: `1px solid ${t.border}`, color: t.textMuted, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}
+          ><Icon id="close" size={13} /></button>
+        </div>
+
+        {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>{err}</p>}
+
+        <div>
+          <label style={labelStyle}>What did you buy?</label>
+          <input className="ui-input" style={inputStyle} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. 24 gold chains, 5g each" />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Total Amount (₹) *</label>
+            <input type="number" min="0" className="ui-input" style={inputStyle} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="50000" />
+          </div>
+          <div>
+            <label style={labelStyle}>Paid Now (₹)</label>
+            <input type="number" min="0" className="ui-input" style={inputStyle} value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} placeholder="0" />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={markFullyPaid}
+          disabled={!amount}
+          style={{
+            alignSelf: "flex-start", fontSize: 11, fontWeight: 700, color: t.green,
+            background: t.greenBg, border: `1px solid ${t.green}40`, borderRadius: 8,
+            padding: "6px 10px", cursor: amount ? "pointer" : "not-allowed", opacity: amount ? 1 : 0.5,
+          }}
+        >✓ Paid in full, same day</button>
+
+        <div>
+          <label style={labelStyle}>Date</label>
+          <input type="date" className="ui-input" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+
+        {pendingNow > 0 && (
+          <div>
+            <label style={labelStyle}>Expected payoff date (optional)</label>
+            <input type="date" className="ui-input" style={inputStyle} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </div>
+        )}
+
+        {amount && (
+          <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>
+            Pending after this entry: <strong style={{ color: pendingNow > 0 ? t.red : t.green }}>{inr(pendingNow)}</strong>
+          </p>
+        )}
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+          <button onClick={onClose} style={{
+            background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
+            borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{
+            background: t.accent, color: "#fff", border: "none", borderRadius: 10,
+            padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: saving ? "not-allowed" : "pointer",
+            opacity: saving ? 0.6 : 1,
+          }}>{saving ? "Saving..." : "Add to Ledger"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── EDIT PURCHASE MODAL — correct a previously logged entry ─────────────
+function EditPurchaseModal({ purchase, onClose, onSaved, onToast, t }) {
+  const [description, setDescription] = useState(purchase.description || "");
+  const [amount, setAmount] = useState(purchase.amount);
+  const [paidAmount, setPaidAmount] = useState(purchase.paidAmount);
+  const [dueDate, setDueDate] = useState(purchase.dueDate ? String(purchase.dueDate).slice(0, 10) : "");
+  const [date, setDate] = useState(purchase.date ? String(purchase.date).slice(0, 10) : "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const inputStyle = {
+    width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
+    border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 12px",
+    fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", outline: "none",
+    "--focus-ring": `${t.accent}33`,
+  };
+  const labelStyle = { fontSize: 11, color: t.textMuted, display: "block", marginBottom: 4 };
+  const pendingNow = Math.max(0, Number(amount || 0) - Number(paidAmount || 0));
+
+  const handleSave = async () => {
+    setErr("");
+    const amt = Number(amount);
+    const paid = Number(paidAmount) || 0;
+    if (!amt || amt <= 0) return setErr("Amount is required");
+    if (paid > amt) return setErr("Paid amount can't exceed the total amount");
+
+    setSaving(true);
+    try {
+      const res = await fetch(`${BACKEND}/api/supplier-purchases/${purchase._id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description,
+          amount: amt,
+          paidAmount: paid,
+          date,
+          dueDate: paid < amt ? (dueDate || null) : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not update entry");
+      onSaved?.();
+      onToast?.("✅ Entry updated!");
+      onClose();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1150, padding: 16,
+      overflowY: "auto",
+    }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16,
+        padding: 24, width: "100%", maxWidth: 420, display: "flex", flexDirection: "column",
+        gap: 14, maxHeight: "90vh", overflowY: "auto",
+        animation: "modalIn 0.2s ease",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 19, color: t.textPrimary, margin: 0 }}>
+            Edit Purchase
+          </h3>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              width: 30, height: 30, borderRadius: 8, background: `${t.accent}12`,
+              border: `1px solid ${t.border}`, color: t.textMuted, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}
+          ><Icon id="close" size={13} /></button>
+        </div>
+
+        {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>{err}</p>}
+
+        <div>
+          <label style={labelStyle}>Description</label>
+          <input className="ui-input" style={inputStyle} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Total Amount (₹)</label>
+            <input type="number" min="0" className="ui-input" style={inputStyle} value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Paid (₹)</label>
+            <input type="number" min="0" className="ui-input" style={inputStyle} value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} />
+          </div>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Date</label>
+          <input type="date" className="ui-input" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+
+        {pendingNow > 0 && (
+          <div>
+            <label style={labelStyle}>Expected payoff date</label>
+            <input type="date" className="ui-input" style={inputStyle} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </div>
+        )}
+
+        <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>
+          Pending after save: <strong style={{ color: pendingNow > 0 ? t.red : t.green }}>{inr(pendingNow)}</strong>
+        </p>
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+          <button onClick={onClose} style={{
+            background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
+            borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{
+            background: t.accent, color: "#fff", border: "none", borderRadius: 10,
+            padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: saving ? "not-allowed" : "pointer",
+            opacity: saving ? 0.6 : 1,
+          }}>{saving ? "Saving..." : "Save Changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── RECORD PAYMENT MODAL — pay down a pending balance ────────────────────
+function RecordPaymentModal({ purchase, onClose, onSaved, onToast, t }) {
+  const [amount, setAmount] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const inputStyle = {
+    width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
+    border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 12px",
+    fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", outline: "none",
+    "--focus-ring": `${t.accent}33`,
+  };
+
+  const handleSave = async () => {
+    setErr("");
+    const amt = Number(amount);
+    if (!amt || amt <= 0) return setErr("Enter a valid payment amount");
+    if (amt > purchase.pendingAmount) return setErr(`Can't pay more than the pending amount (${inr(purchase.pendingAmount)})`);
+
+    setSaving(true);
+    try {
+      const res = await fetch(`${BACKEND}/api/supplier-purchases/${purchase._id}/pay`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amt }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not record payment");
+      onSaved?.();
+      onToast?.("✅ Payment recorded!");
+      onClose();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16,
+    }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16,
+        padding: 24, width: "100%", maxWidth: 380, display: "flex", flexDirection: "column",
+        gap: 14, animation: "modalIn 0.2s ease",
+      }}>
+        <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 18, color: t.textPrimary, margin: 0 }}>
+          Record Payment
+        </h3>
+        <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>
+          Pending on this entry: <strong style={{ color: t.red }}>{inr(purchase.pendingAmount)}</strong>
+        </p>
+
+        {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>{err}</p>}
+
+        <input
+          type="number" min="0" max={purchase.pendingAmount}
+          className="ui-input" style={inputStyle}
+          value={amount} onChange={(e) => setAmount(e.target.value)}
+          placeholder={`Up to ${purchase.pendingAmount}`}
+          autoFocus
+        />
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{
+            background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
+            borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{
+            background: t.accent, color: "#fff", border: "none", borderRadius: 10,
+            padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: saving ? "not-allowed" : "pointer",
+            opacity: saving ? 0.6 : 1,
+          }}>{saving ? "Saving..." : "Record Payment"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── KHATA SECTION — the purchase ledger, lives inside the Supplier Drawer
+function KhataSection({ supplier, onToast, t }) {
+  const { loading, error, purchases, refresh } = useSupplierPurchases(supplier._id);
+  const [showAddPurchase, setShowAddPurchase] = useState(false);
+  const [payTarget, setPayTarget] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
+
+  const totalPurchased = purchases.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const totalPaid = purchases.reduce((sum, p) => sum + (p.paidAmount || 0), 0);
+  const totalPending = purchases.reduce((sum, p) => sum + (p.pendingAmount || 0), 0);
+
+  return (
+    <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+      {showAddPurchase && (
+        <AddPurchaseModal
+          supplier={supplier}
+          onClose={() => setShowAddPurchase(false)}
+          onSaved={refresh}
+          onToast={onToast}
+          t={t}
+        />
+      )}
+      {editTarget && (
+        <EditPurchaseModal
+          purchase={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSaved={refresh}
+          onToast={onToast}
+          t={t}
+        />
+      )}
+      {payTarget && (
+        <RecordPaymentModal
+          purchase={payTarget}
+          onClose={() => setPayTarget(null)}
+          onSaved={refresh}
+          onToast={onToast}
+          t={t}
+        />
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p style={{
+          fontSize: "11px", fontWeight: 600, color: t.textMuted,
+          textTransform: "uppercase", letterSpacing: "0.08em",
+          margin: 0, fontFamily: "'DM Sans', sans-serif",
+        }}>Purchase Ledger</p>
+        <button
+          onClick={() => setShowAddPurchase(true)}
+          style={{
+            display: "flex", alignItems: "center", gap: 4,
+            fontSize: "11px", fontWeight: 700, color: t.accent,
+            background: `${t.accent}12`, border: `1px solid ${t.accent}30`,
+            borderRadius: 8, padding: "6px 10px", cursor: "pointer",
+          }}
+        ><Icon id="plus" size={11} /> Add Purchase</button>
+      </div>
+
+      {/* Ledger KPI row */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+        <div style={{ background: `${t.accent}08`, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 12px" }}>
+          <p style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: t.textMuted, margin: 0 }}>Purchased</p>
+          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 15, color: t.textPrimary, margin: "3px 0 0" }}>{inr(totalPurchased)}</p>
+        </div>
+        <div style={{ background: t.greenBg, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 12px" }}>
+          <p style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: t.textMuted, margin: 0 }}>Paid</p>
+          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 15, color: t.green, margin: "3px 0 0" }}>{inr(totalPaid)}</p>
+        </div>
+        <div style={{ background: totalPending > 0 ? t.redBg : t.greenBg, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 12px" }}>
+          <p style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: t.textMuted, margin: 0 }}>Pending</p>
+          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 15, color: totalPending > 0 ? t.red : t.green, margin: "3px 0 0" }}>{inr(totalPending)}</p>
+        </div>
+      </div>
+
+      {/* Purchase history list */}
+      {loading ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} height={52} radius={10} t={t} />)}
+        </div>
+      ) : error ? (
+        <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>{error}</p>
+      ) : purchases.length === 0 ? (
+        <p style={{ fontSize: 12, color: t.textMuted, margin: 0, textAlign: "center", padding: "12px 0" }}>
+          No purchases recorded yet. Add the first one above.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflowY: "auto" }}>
+          {purchases.map((p) => (
+            <div key={p._id} style={{
+              border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 12px",
+              display: "flex", flexDirection: "column", gap: 6,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: t.textPrimary, margin: 0, wordBreak: "break-word" }}>
+                    {p.description || "Purchase entry"}
+                  </p>
+                  <p style={{ fontSize: 10, color: t.textMuted, margin: "2px 0 0" }}>{formatDate(p.date)} · {p.purchaseId}</p>
+                </div>
+                <PurchaseStatusBadge status={p.status} t={t} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <div style={{ display: "flex", gap: 12, fontSize: 11, color: t.textMuted }}>
+                    <span>Total: <strong style={{ color: t.textPrimary }}>{inr(p.amount)}</strong></span>
+                    <span>Paid: <strong style={{ color: t.green }}>{inr(p.paidAmount)}</strong></span>
+                    {p.pendingAmount > 0 && <span>Due: <strong style={{ color: t.red }}>{inr(p.pendingAmount)}</strong></span>}
+                  </div>
+                  {p.pendingAmount > 0 && p.dueDate && (
+                    <span style={{ fontSize: 10, color: t.orange }}>Due by {formatDate(p.dueDate)}</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <button
+                    onClick={() => setEditTarget(p)}
+                    style={{
+                      fontSize: 10, fontWeight: 700, color: t.textMuted, background: `${t.accent}12`,
+                      border: `1px solid ${t.border}`, borderRadius: 7, padding: "5px 10px", cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >Edit</button>
+                  {p.pendingAmount > 0 && (
+                    <button
+                      onClick={() => setPayTarget(p)}
+                      style={{
+                        fontSize: 10, fontWeight: 700, color: "#fff", background: t.accent,
+                        border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >Pay</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -510,13 +1100,13 @@ function SupplierDrawer({ supplier, onClose, onEdit, onDeleted, onToast, t }) {
                     </button>
                 </div>
 
-                {/* Stats row — real, derived from linked products */}
+                {/* Stats row — investment + pending now lead here, ahead of raw stock value */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                     {[
+                        ["Total Invested", inr(supplier.totalPurchased)],
+                        ["Pending", inr(supplier.totalPending)],
                         ["Linked Products", supplier.linkedProductCount],
-                        ["Total Value", inr(supplier.totalValue)],
                         ["Last Product Update", formatDate(supplier.lastOrder)],
-                        ["Payment Terms", supplier.paymentTerms],
                     ].map(([label, val]) => (
                         <div key={label} className="ui-card" style={{
                             background: `${t.accent}08`, border: `1px solid ${t.border}`,
@@ -545,6 +1135,9 @@ function SupplierDrawer({ supplier, onClose, onEdit, onDeleted, onToast, t }) {
                     }}>Supplier Rating</p>
                     <StarRating rating={supplier.rating} t={t} />
                 </div>
+
+                {/* Purchase ledger — new */}
+                <KhataSection supplier={supplier} onToast={onToast} t={t} />
 
                 {/* Contact Info */}
                 <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -651,6 +1244,14 @@ function SupplierCard({ supplier, onClick, t }) {
                       <Icon id="pin" size={11} /> {supplier.location}
                   </span>
                 )}
+                {supplier.totalPending > 0 && (
+                  <span style={{
+                    display: "flex", alignItems: "center", gap: 3, fontSize: "10px", fontWeight: 700,
+                    color: t.red, background: t.redBg, borderRadius: 99, padding: "3px 8px",
+                  }}>
+                      Due {inr(supplier.totalPending)}
+                  </span>
+                )}
             </div>
 
             {/* Stats row */}
@@ -660,10 +1261,10 @@ function SupplierCard({ supplier, onClick, t }) {
                         fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "15px",
                         color: t.textPrimary, margin: 0,
                     }}>
-                        {inr(supplier.totalValue)}
+                        {inr(supplier.totalPurchased)}
                     </p>
                     <p style={{ fontSize: "10px", color: t.textMuted, margin: "2px 0 0" }}>
-                        {supplier.linkedProductCount} products
+                        invested · {supplier.linkedProductCount} products
                     </p>
                 </div>
                 <StarRating rating={supplier.rating} t={t} />
@@ -723,11 +1324,20 @@ function SupplierRow({ supplier, onClick, t, isLast }) {
                     fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px",
                     color: t.textPrimary, margin: 0,
                 }}>
-                    {inr(supplier.totalValue)}
+                    {inr(supplier.totalPurchased)}
                 </p>
                 <p style={{ fontSize: "10px", color: t.textMuted, margin: "1px 0 0" }}>
-                    {supplier.linkedProductCount} products
+                    invested
                 </p>
+            </td>
+            <td style={{ padding: "14px 8px" }}>
+                {supplier.totalPending > 0 ? (
+                    <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.red, margin: 0 }}>
+                        {inr(supplier.totalPending)}
+                    </p>
+                ) : (
+                    <p style={{ fontSize: "11px", color: t.textMuted, margin: 0 }}>—</p>
+                )}
             </td>
             <td style={{ padding: "14px 8px" }}>
                 <StarRating rating={supplier.rating} t={t} />
@@ -811,6 +1421,7 @@ function SkeletonRow({ t, isLast }) {
                 </div>
             </td>
             <td style={{ padding: "14px 8px" }}><Skeleton width={80} height={13} t={t} /></td>
+            <td style={{ padding: "14px 8px" }}><Skeleton width={70} height={13} t={t} /></td>
             <td style={{ padding: "14px 8px" }}><Skeleton width={60} height={11} t={t} /></td>
             <td style={{ padding: "14px 8px" }}><Skeleton width={54} height={18} radius={99} t={t} /></td>
             <td style={{ padding: "14px 0" }} />
@@ -937,7 +1548,7 @@ const styles = `
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function Suppliers() {
     const { t } = useTheme();
-    const { loading, error, suppliers, refresh } = useSuppliersData();
+    const { loading, error, suppliers, overallKhata, refresh } = useSuppliersData();
 
     const [search, setSearch] = useState("");
     const [catFilter, setCatFilter] = useState("All");
@@ -958,11 +1569,12 @@ export default function Suppliers() {
     });
 
     const activeCount = suppliers.filter((s) => s.status === "Active").length;
-    const totalValue = suppliers.reduce((sum, s) => sum + (s.totalValue || 0), 0);
     const ratedSuppliers = suppliers.filter((s) => s.rating > 0);
     const avgRating = ratedSuppliers.length
       ? (ratedSuppliers.reduce((sum, s) => sum + s.rating, 0) / ratedSuppliers.length).toFixed(1)
       : "0.0";
+    const totalInvested = overallKhata?.totalPurchased || 0;
+    const totalPending = overallKhata?.totalPending || 0;
 
     // Real categories, derived from suppliers actually saved — grows as
     // the shop owner types new ones in the Add/Edit Supplier form.
@@ -1038,9 +1650,9 @@ export default function Suppliers() {
                 {/* KPI Row */}
                 <div className="sup-kpi-grid">
                     <SummaryKpi label="Total Suppliers" value={suppliers.length} sub={`${activeCount} active`} trendDir="up" loading={loading} t={t} />
-                    <SummaryKpi label="Total Value"     value={inr(totalValue)}   sub="from linked products" trendDir="up" loading={loading} t={t} />
+                    <SummaryKpi label="Total Invested"   value={inr(totalInvested)} sub="goods purchased so far" trendDir="up" loading={loading} t={t} />
+                    <SummaryKpi label="Pending Payments" value={inr(totalPending)} sub={totalPending > 0 ? "still owed to suppliers" : "all clear"} trendDir={totalPending > 0 ? "down" : "up"} loading={loading} t={t} />
                     <SummaryKpi label="Avg. Rating"     value={`${avgRating} ★`}  sub="across rated suppliers" trendDir="neu" loading={loading} t={t} />
-                    <SummaryKpi label="On Hold"         value={suppliers.filter((s) => s.status === "On Hold").length} sub="needs review" trendDir="down" loading={loading} t={t} />
                 </div>
 
                 {/* Filters */}
@@ -1157,10 +1769,10 @@ export default function Suppliers() {
                         padding: "20px",
                     }}
                 >
-                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "560px" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "620px" }}>
                         <thead>
                             <tr style={{ borderBottom: `1px solid ${t.border}` }}>
-                                {["Supplier", "Category", "Contact", "Total Value", "Rating", "Status", ""].map((h, i) => (
+                                {["Supplier", "Category", "Contact", "Invested", "Pending", "Rating", "Status", ""].map((h, i) => (
                                     <th
                                         key={i}
                                         style={{
@@ -1168,7 +1780,7 @@ export default function Suppliers() {
                                             fontSize: "10px", fontWeight: 600,
                                             textTransform: "uppercase", letterSpacing: "0.08em",
                                             color: t.textMuted, fontFamily: "'DM Sans', sans-serif",
-                                            paddingRight: i < 6 ? "8px" : "0",
+                                            paddingRight: i < 7 ? "8px" : "0",
                                             whiteSpace: "nowrap",
                                         }}
                                     >
@@ -1194,7 +1806,7 @@ export default function Suppliers() {
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={7} style={{ padding: "48px 0", textAlign: "center" }}>
+                                    <td colSpan={8} style={{ padding: "48px 0", textAlign: "center" }}>
                                         <div style={{ display: "flex", justifyContent: "center", color: t.textMuted, marginBottom: 8 }}>
                                             <Icon id="search" size={30} />
                                         </div>

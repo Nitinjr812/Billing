@@ -4,6 +4,7 @@ import { ThemeProvider, useTheme } from "./components/ThemeContext";
 import { NotificationProvider } from "./components/NotificationContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";   // ← ADD
 import { Navbar, Sidebar, NAV_ITEMS } from "./components/Navbar";
+import GlobalScrollbar from "./components/GlobalScrollbar";     // ← ADD
 import Login from "./pages/Login";       // ← ADD
 import Signup from "./pages/Signup";     // ← ADD
 import Dashboard from "./pages/Dashboard";
@@ -41,38 +42,41 @@ function AppInner() {
   }, []);
 
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<Signup />} />
-      <Route path="/verify-email/:token" element={<VerifyEmail />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/*" element={
+    <>
+      <GlobalScrollbar />
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/verify-email/:token" element={<VerifyEmail />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/*" element={
 
-        <ProtectedRoute>
-          <div className="min-h-screen" style={{ background: t.bgPage }}>
-            <Navbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-            <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-            <main className="pt-20 px-4 md:px-8 pb-10 max-w-7xl mx-auto">
-              <Routes>
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/subscription" element={<Subscription />} />
-                <Route path="/inventory" element={<Inventory />} />
-                <Route path="/billing" element={<Orders />} />
-                <Route path="/customers" element={<Customers />} />
-                <Route path="/stocks" element={<Stocks />} />
-                <Route path="/reports" element={<Reports />} />
-                <Route path="/notifications" element={<Notifications />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/suppliers" element={<Suppliers />} />
+          <ProtectedRoute>
+            <div className="min-h-screen" style={{ background: t.bgPage }}>
+              <Navbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+              <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+              <main className="pt-20 px-4 md:px-8 pb-10 max-w-7xl mx-auto">
+                <Routes>
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/subscription" element={<Subscription />} />
+                  <Route path="/inventory" element={<Inventory />} />
+                  <Route path="/billing" element={<Orders />} />
+                  <Route path="/customers" element={<Customers />} />
+                  <Route path="/stocks" element={<Stocks />} />
+                  <Route path="/reports" element={<Reports />} />
+                  <Route path="/notifications" element={<Notifications />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/suppliers" element={<Suppliers />} />
 
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
-              </Routes>
-            </main>
-          </div>
-        </ProtectedRoute>
-      } />
-    </Routes>
+                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                </Routes>
+              </main>
+            </div>
+          </ProtectedRoute>
+        } />
+      </Routes>
+    </>
   );
 }
 
@@ -81,7 +85,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ThemeProvider>
-        <AuthProvider>          {/* ← ADD (sabse bahar, ThemeProvider ke andar) */}
+        <AuthProvider>          
           <NotificationProvider>
             <AppInner />
           </NotificationProvider>
