@@ -15,7 +15,7 @@ export const NAV_ITEMS = [
   { label: "Notifications", icon: "◎", path: "/notifications" },
   { label: "Reports",       icon: "◪", path: "/reports"       },
   { label: "Subscription",  icon: "✦", path: "/subscription"  },
-  { label: "Settings",      icon: "◐", path: "/settings"      },
+  { label: "Settings",      icon: "◐", path: "/settings"      }, 
 ];
 
 // ─── HOOK: isDesktop ──────────────────────────────────────────────────────────

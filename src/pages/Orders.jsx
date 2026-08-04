@@ -731,6 +731,13 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
   const [gstRate, setGstRate] = useState(0);
   const [sellerGstin, setSellerGstin] = useState("");
 
+  // ── Discount permission / OTP-approval flow state ──────────────────────
+  const [discountChecking, setDiscountChecking] = useState(false);
+  const [otpModalOpen, setOtpModalOpen] = useState(false);
+  const [pendingRequestId, setPendingRequestId] = useState(null);
+  const [otpValue, setOtpValue] = useState("");
+  const [otpVerifying, setOtpVerifying] = useState(false);
+
   const [listening, setListening] = useState(false);
   const [voiceUnsupported, setVoiceUnsupported] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -943,7 +950,8 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
     items, discountType, discountValue, gstRate,
   });
 
-  const handleGenerate = async () => {
+  // ── Actually save the invoice (called directly, or after OTP approval) ──
+  const createInvoice = async (withApprovalId = null) => {
     setErr("");
     if (!customerName.trim()) return setErr("Customer name is required");
     const validItems = items.filter((it) => it.name.trim());
@@ -953,7 +961,10 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
     try {
       const res = await fetch(`${BACKEND}/api/invoices`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           customerName,
           customerEmail,
@@ -964,6 +975,7 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
           gstRate: Number(gstRate) || 0,
           sellerGstin,
           status: orderStatus,
+          approvalId: withApprovalId,
         }),
       });
       const savedInvoice = await res.json();
@@ -977,6 +989,75 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
       setErr(e.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── "Generate & Download PDF" button entry point — checks discount first ──
+  const handleGenerateClick = async () => {
+    setErr("");
+    if (!customerName.trim()) return setErr("Customer name is required");
+    const validItems = items.filter((it) => it.name.trim());
+    if (validItems.length === 0) return setErr("Add at least one item");
+
+    if (Number(discountValue) <= 0) {
+      return createInvoice(null); // no discount, create directly
+    }
+
+    setDiscountChecking(true);
+    try {
+      const res = await fetch(`${BACKEND}/api/invoices/check-discount`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          items: validItems.map((it) => ({ name: it.name, qty: Number(it.qty), price: Number(it.price) })),
+          discountType,
+          discountValue: Number(discountValue) || 0,
+          customerName,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Discount check failed");
+
+      if (data.allowed) {
+        await createInvoice(null);
+      } else if (data.otpRequired) {
+        setPendingRequestId(data.requestId);
+        setOtpModalOpen(true);
+        setErr(data.message || "Owner's OTP is required.");
+      }
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setDiscountChecking(false);
+    }
+  };
+
+  // ── Verify the owner's OTP, then create the invoice with approval id ────
+  const handleVerifyOtp = async () => {
+    if (!otpValue.trim()) return;
+    setOtpVerifying(true);
+    try {
+      const res = await fetch(`${BACKEND}/api/invoices/verify-discount-otp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ requestId: pendingRequestId, otp: otpValue.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "OTP verification failed");
+
+      setOtpModalOpen(false);
+      setOtpValue("");
+      await createInvoice(data.approvalId);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setOtpVerifying(false);
     }
   };
 
@@ -1034,7 +1115,16 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
           </div>
           <div>
             <label style={{ fontSize: 11, color: t.textMuted }}>Phone</label>
-            <input className="ui-input" style={inputStyle} value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="+91 XXXXX XXXXX" />
+            <input
+              className="ui-input"
+              style={inputStyle}
+              type="tel"
+              inputMode="numeric"
+              maxLength={10}
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+              placeholder="10-digit mobile number"
+            />
           </div>
         </div>
 
@@ -1196,14 +1286,62 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
             background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
             borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
           }}>Cancel</button>
-          <button onClick={handleGenerate} disabled={saving} style={{
+          <button onClick={handleGenerateClick} disabled={saving || discountChecking} style={{
             display: "flex", alignItems: "center", gap: 8,
             background: t.accent, color: "#fff", border: "none", borderRadius: 10,
-            padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: saving ? "not-allowed" : "pointer",
-            opacity: saving ? 0.6 : 1,
-          }}>{saving ? "Saving..." : (<><DownloadIcon size={14} /> Generate & Download PDF</>)}</button>
+            padding: "9px 18px", fontSize: 13, fontWeight: 600,
+            cursor: (saving || discountChecking) ? "not-allowed" : "pointer",
+            opacity: (saving || discountChecking) ? 0.6 : 1,
+          }}>
+            {discountChecking ? "Checking…" : saving ? "Saving..." : (<><DownloadIcon size={14} /> Generate & Download PDF</>)}
+          </button>
         </div>
       </div>
+
+      {/* ── OTP modal — owner sent a code because the discount exceeded the limit ── */}
+      {otpModalOpen && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16,
+          }}
+        >
+          <div style={{
+            background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16,
+            padding: 24, width: "100%", maxWidth: 340, display: "flex", flexDirection: "column", gap: 12,
+          }}>
+            <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 16, color: t.textPrimary, margin: 0 }}>
+              Owner Approval Required
+            </h3>
+            <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>
+              An OTP has been sent to the owner's email. Get the code from them and enter it here.
+            </p>
+            <input
+              value={otpValue}
+              onChange={(e) => setOtpValue(e.target.value)}
+              placeholder="6-digit OTP"
+              maxLength={6}
+              style={{
+                width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
+                border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 12px",
+                fontSize: 16, letterSpacing: 4, textAlign: "center", color: t.textPrimary, outline: "none",
+              }}
+            />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setOtpModalOpen(false)} style={{
+                background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
+                borderRadius: 10, padding: "8px 16px", fontSize: 13, cursor: "pointer",
+              }}>Cancel</button>
+              <button onClick={handleVerifyOtp} disabled={otpVerifying || otpValue.length < 4} style={{
+                background: t.accent, color: "#fff", border: "none", borderRadius: 10,
+                padding: "8px 16px", fontSize: 13, fontWeight: 600,
+                cursor: otpVerifying ? "not-allowed" : "pointer", opacity: otpVerifying ? 0.6 : 1,
+              }}>{otpVerifying ? "Verifying…" : "Verify & Continue"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

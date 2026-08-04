@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { DiscountPermissionsSection } from "./DiscountPermissions";
 
 const BACKEND = "https://billing-backend-tawny.vercel.app";
 
@@ -24,6 +25,7 @@ const BILLING = {
 const NAV_ITEMS = [
   { id: "profile",       label: "Profile" },
   { id: "tax",           label: "Tax & GST" },
+  { id: "discounts",     label: "Discount Limits" },
   { id: "notifications", label: "Notifications" },
   { id: "integrations",  label: "Integrations" },
   { id: "team",          label: "Team & Access" },
@@ -72,6 +74,13 @@ function NavIcon({ id, size = 17 }) {
       <>
         <path d="M6.5 3h8l3 3v15h-11z" />
         <path d="M9 8.5h6M9 12h6M9 15.5h3.5" />
+      </>
+    ),
+    discounts: (
+      <>
+        <circle cx="7.5" cy="7.5" r="2.3" />
+        <circle cx="16.5" cy="16.5" r="2.3" />
+        <path d="M18 6L6 18" />
       </>
     ),
     notifications: (
@@ -927,6 +936,7 @@ export default function Settings() {
   const sectionMap = {
     profile:       <ProfileSection />,
     tax:           <TaxSection />,
+    discounts:     <DiscountPermissionsSection embedded />,
     notifications: <NotificationsSection />,
     integrations:  <IntegrationsSection />,
     team:          <TeamSection />,

@@ -2,11 +2,11 @@ import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider, useTheme } from "./components/ThemeContext";
 import { NotificationProvider } from "./components/NotificationContext";
-import { AuthProvider, useAuth } from "./context/AuthContext";   // ← ADD
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Navbar, Sidebar, NAV_ITEMS } from "./components/Navbar";
-import GlobalScrollbar from "./components/GlobalScrollbar";     // ← ADD
-import Login from "./pages/Login";       // ← ADD
-import Signup from "./pages/Signup";     // ← ADD
+import GlobalScrollbar from "./components/GlobalScrollbar";
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import Subscription from "./pages/Subscription";
 import Inventory from "./pages/Inventory";
@@ -14,6 +14,7 @@ import Orders from "./pages/Orders";
 import Customers from "./pages/Customers";
 import Stocks from "./pages/Stocks";
 import Reports from "./pages/Reports";
+import DiscountPermissions from "./pages/DiscountPermissions";
 import Settings from "./pages/Settings";
 import Notifications from "./pages/Notifications";
 import Suppliers from "./pages/Supliers";
@@ -68,7 +69,7 @@ function AppInner() {
                   <Route path="/notifications" element={<Notifications />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/suppliers" element={<Suppliers />} />
-
+                  <Route path="/discount-permissions" element={<DiscountPermissions />} />
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </main>
@@ -85,7 +86,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ThemeProvider>
-        <AuthProvider>          
+        <AuthProvider>
           <NotificationProvider>
             <AppInner />
           </NotificationProvider>
