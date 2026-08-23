@@ -20,6 +20,8 @@ import Notifications from "./pages/Notifications";
 import Suppliers from "./pages/Supliers";
 import ForgotPassword from "./pages/ForgotPassword";
 import VerifyEmail from "./pages/VerifyEmail";
+import LandingPage from "./pages/Landingpage";
+
 // ─── PROTECTED ROUTE WRAPPER ──────────────────────────────────────────────
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -28,11 +30,18 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+// ─── ROOT ("/") — landing page for guests, dashboard for logged-in users ──
+function RootRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (user) return <Navigate to="/dashboard" replace />;
+  return <LandingPage />;
+}
+
 // ─── INNER APP ────────────────────────────────────────────────────────────────
 function AppInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t } = useTheme();
-  const { user } = useAuth();
 
   useEffect(() => {
     const handleResize = () => {
@@ -46,36 +55,41 @@ function AppInner() {
     <>
       <GlobalScrollbar />
       <Routes>
+        {/* ─ Public routes ─ */}
+        <Route path="/" element={<RootRoute />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/verify-email/:token" element={<VerifyEmail />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/*" element={
 
-          <ProtectedRoute>
-            <div className="min-h-screen" style={{ background: t.bgPage }}>
-              <Navbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-              <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-              <main className="pt-20 px-4 md:px-8 pb-10 max-w-7xl mx-auto">
-                <Routes>
-                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/subscription" element={<Subscription />} />
-                  <Route path="/inventory" element={<Inventory />} />
-                  <Route path="/billing" element={<Orders />} />
-                  <Route path="/customers" element={<Customers />} />
-                  <Route path="/stocks" element={<Stocks />} />
-                  <Route path="/reports" element={<Reports />} />
-                  <Route path="/notifications" element={<Notifications />} />
-                  <Route path="/settings" element={<Settings />} />
-                  <Route path="/suppliers" element={<Suppliers />} />
-                  <Route path="/discount-permissions" element={<DiscountPermissions />} />
-                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                </Routes>
-              </main>
-            </div>
-          </ProtectedRoute>
-        } />
+        {/* ─ Protected app shell ─ */}
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <div className="min-h-screen" style={{ background: t.bgPage }}>
+                <Navbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+                <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+                <main className="pt-20 px-4 md:px-8 pb-10 max-w-7xl mx-auto">
+                  <Routes>
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/subscription" element={<Subscription />} />
+                    <Route path="/inventory" element={<Inventory />} />
+                    <Route path="/billing" element={<Orders />} />
+                    <Route path="/customers" element={<Customers />} />
+                    <Route path="/stocks" element={<Stocks />} />
+                    <Route path="/reports" element={<Reports />} />
+                    <Route path="/notifications" element={<Notifications />} />
+                    <Route path="/settings" element={<Settings />} />
+                    <Route path="/suppliers" element={<Suppliers />} />
+                    <Route path="/discount-permissions" element={<DiscountPermissions />} />
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  </Routes>
+                </main>
+              </div>
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </>
   );

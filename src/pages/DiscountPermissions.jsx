@@ -316,7 +316,7 @@ export function DiscountPermissionsSection({ embedded = false }) {
                 >
                   {justSaved[m._id] && <Icon id="check" size={11} />}
                   {saving[m._id] ? "Saving…" : justSaved[m._id] ? "Saved" : "Save"}
-                </button>
+                </button> 
               </div>
             ))}
           </div>
