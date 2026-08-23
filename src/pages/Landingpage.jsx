@@ -26,6 +26,43 @@ function useReveal() {
   return [ref, visible];
 }
 
+function useCountUp(target, active, duration = 1200) {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    let start = null;
+    let raf;
+    const step = (ts) => {
+      if (!start) start = ts;
+      const progress = Math.min((ts - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setVal(Math.round(target * eased));
+      if (progress < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [active, target, duration]);
+  return val;
+}
+
+function AnimatedStat({ label, prefix = "", suffix = "", target, decimals = 0, up }) {
+  const { t } = useTheme();
+  const [ref, visible] = useReveal();
+  const raw = useCountUp(target, visible);
+  const display = decimals ? (raw / Math.pow(10, decimals)).toFixed(1) : raw.toLocaleString("en-IN");
+  return (
+    <div ref={ref}>
+      <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: t.textMuted, margin: "0 0 4px" }}>{label}</p>
+      <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "20px", color: t.textPrimary, margin: 0 }}>
+        {prefix}{display}{suffix}{" "}
+        {up !== undefined && (
+          <span style={{ fontSize: "11px", fontFamily: "'DM Sans', sans-serif", fontWeight: 700, color: up ? "#2fae60" : "#e5484d" }}>{up ? "▲" : "▼"}</span>
+        )}
+      </p>
+    </div>
+  );
+}
+
 function Reveal({ children, delay = 0, style = {} }) {
   const [ref, visible] = useReveal();
   return (
@@ -73,11 +110,12 @@ function SectionHeading({ eyebrow, eyebrowColor, title, sub, align = "center", m
   );
 }
 
-function Card({ children, style = {}, hover = true }) {
+function Card({ children, style = {}, hover = true, className = "" }) {
   const { t } = useTheme();
   const [hovered, setHovered] = useState(false);
   return (
     <div
+      className={className}
       onMouseEnter={() => hover && setHovered(true)}
       onMouseLeave={() => hover && setHovered(false)}
       style={{
@@ -163,6 +201,44 @@ function MiniBarChart({ color }) {
   );
 }
 
+// ─── Animated SVG line chart (draws in on scroll) ──────────────────────────
+function AnimatedLineChart({ color, points, height = 90 }) {
+  const { t } = useTheme();
+  const [ref, visible] = useReveal();
+  const w = 280;
+  const data = points || [30, 45, 38, 60, 52, 74, 68, 88];
+  const max = Math.max(...data), min = Math.min(...data);
+  const step = w / (data.length - 1);
+  const coords = data.map((d, i) => [i * step, height - ((d - min) / (max - min || 1)) * (height - 14) - 6]);
+  const path = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x},${y}`).join(" ");
+  const areaPath = `${path} L${w},${height} L0,${height} Z`;
+  const c = color || t.accent;
+  const pathRef = useRef(null);
+  const [len, setLen] = useState(0);
+  useEffect(() => { if (pathRef.current) setLen(pathRef.current.getTotalLength()); }, []);
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} width="100%" height={height} preserveAspectRatio="none" style={{ overflow: "visible" }}>
+      <defs>
+        <linearGradient id={`grad-${c.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={c} stopOpacity="0.28" />
+          <stop offset="100%" stopColor={c} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={`url(#grad-${c.replace("#", "")})`} opacity={visible ? 1 : 0} style={{ transition: "opacity 0.6s ease 0.4s" }} />
+      <path
+        ref={pathRef}
+        d={path} fill="none" stroke={c} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+        strokeDasharray={len} strokeDashoffset={visible ? 0 : len}
+        style={{ transition: "stroke-dashoffset 1.1s cubic-bezier(0.65,0,0.35,1)" }}
+      />
+      {visible && coords.map(([x, y], i) => (
+        <circle key={i} cx={x} cy={y} r="3" fill={c}
+          style={{ opacity: 0, animation: `fadeInDot 0.4s ease forwards ${0.4 + i * 0.08}s` }} />
+      ))}
+    </svg>
+  );
+}
+
 // ─── Floating insight card used around hero dashboard ─────────────────────
 function FloatingCard({ title, body, color, style, icon }) {
   const { t } = useTheme();
@@ -230,16 +306,16 @@ function Hero({ onStart, onExplore }) {
             <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "15px", color: t.textPrimary }}>Dashboard</span>
             <Pill>Live</Pill>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
-            <StatLine label="Revenue" value="₹4.8L" up />
-            <StatLine label="Orders" value="312" up />
-            <StatLine label="Customers" value="1,204" up />
-            <StatLine label="Pending Invoices" value="18" />
+          <div className="hero-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
+            <AnimatedStat label="Revenue" prefix="₹" target={48} suffix="L" decimals={1} up />
+            <AnimatedStat label="Orders" target={312} up />
+            <AnimatedStat label="Customers" target={1204} up />
+            <AnimatedStat label="Pending Invoices" target={18} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "12px" }}>
             <Card hover={false} style={{ padding: "16px" }}>
-              <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: t.textMuted, margin: "0 0 10px" }}>Revenue Overview</p>
-              <MiniBarChart />
+              <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: t.textMuted, margin: "0 0 6px" }}>Revenue Overview</p>
+              <AnimatedLineChart height={70} />
             </Card>
             <Card hover={false} style={{ padding: "16px" }}>
               <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: t.textMuted, margin: "0 0 10px" }}>Business Health</p>
@@ -249,11 +325,9 @@ function Hero({ onStart, onExplore }) {
           </div>
         </Card>
 
-        <FloatingCard icon="✦" title="AI Insight" body="Sales are trending upward this week." color={t.accent}
-          style={{ top: "-24px", left: "-40px", display: "none" }} />
-        <div className="floatWrap-left"><FloatingCard icon="✦" title="AI Insight" body="Sales are trending upward this week." color={t.accent} style={{ top: "40px", left: "-40px" }} /></div>
-        <div className="floatWrap-right"><FloatingCard icon="◈" title="Stock Alert" body="3 products may need restocking." color="#e08a2c" style={{ top: "20px", right: "-40px", animationDelay: "1.2s" }} /></div>
-        <div className="floatWrap-bottom"><FloatingCard icon="◪" title="Business Health" body="Net profit is improving." color="#2fae60" style={{ bottom: "-30px", left: "60px", animationDelay: "2.4s" }} /></div>
+        <div className="hero-float"><FloatingCard icon="✦" title="AI Insight" body="Sales are trending upward this week." color={t.accent} style={{ top: "40px", left: "-40px" }} /></div>
+        <div className="hero-float"><FloatingCard icon="◈" title="Stock Alert" body="3 products may need restocking." color="#e08a2c" style={{ top: "20px", right: "-40px", animationDelay: "1.2s" }} /></div>
+        <div className="hero-float"><FloatingCard icon="◪" title="Business Health" body="Net profit is improving." color="#2fae60" style={{ bottom: "-30px", left: "60px", animationDelay: "2.4s" }} /></div>
       </Reveal>
     </section>
   );
@@ -335,14 +409,14 @@ function CoreFeatures() {
   return (
     <section style={{ padding: "100px 24px", background: t.bgHover + "40" }}>
       <SectionHeading eyebrow="Core Platform" title="Everything you need to run your business." />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "20px", maxWidth: "1100px", margin: "0 auto" }}>
+      <div className="core-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "20px", maxWidth: "1100px", margin: "0 auto" }}>
         {features.map((f, i) => (
           <Reveal key={f.title} delay={i * 60}>
-            <Card style={{ padding: "24px", height: "100%" }}>
-              <div style={{
+            <Card className="lift-hover feature-card" style={{ padding: "24px", height: "100%" }}>
+              <div className="feature-icon" style={{
                 width: "40px", height: "40px", borderRadius: "10px",
                 background: t.accent + "18", display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "18px", color: t.accent, marginBottom: "16px",
+                fontSize: "18px", color: t.accent, marginBottom: "16px", transition: "transform 0.3s ease, background 0.3s ease",
               }}>{f.icon}</div>
               <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "17px", color: t.textPrimary, margin: "0 0 12px" }}>{f.title}</h3>
               <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
@@ -366,39 +440,133 @@ function CoreFeatures() {
 function AICopilot() {
   const { t } = useTheme();
   const convo = [
-    { q: "Which products need urgent restocking?", a: "3 products are currently low on stock. Product A is the highest priority based on recent sales velocity." },
-    { q: "How is my business performing?", a: "Revenue is trending upward while pending customer payments remain the main area needing attention." },
-    { q: "Which products are slow-moving?", a: "These products have shown low sales activity. Consider reviewing pricing, placement or promotional offers." },
+    { q: "Which products need urgent restocking?", a: "3 products are currently low on stock. Product A is the highest priority based on recent sales velocity.", chip: "Restock alerts" },
+    { q: "How is my business performing?", a: "Revenue is trending upward while pending customer payments remain the main area needing attention.", chip: "Cancellation rate" },
+    { q: "Which products are slow-moving?", a: "These products have shown low sales activity. Consider reviewing pricing, placement or promotional offers.", chip: "Slow products" },
+    { q: "Suggest a good offer to boost sales.", a: "A bundle discount on slow-moving products alongside your top sellers could help move stock while protecting margins.", chip: "Best offer idea" },
   ];
+
+  const [ref, visible] = useReveal();
   const [active, setActive] = useState(0);
-  const chips = ["Restock alerts", "Slow products", "Cancellation rate", "Best offer idea"];
+  const [phase, setPhase] = useState("userTyping"); // userTyping -> thinking -> alexTyping -> done
+  const [qChars, setQChars] = useState(0);
+  const [aChars, setAChars] = useState(0);
+  const timers = useRef([]);
+
+  const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
+  const after = (ms, fn) => { const id = setTimeout(fn, ms); timers.current.push(id); return id; };
+
+  const runConvo = (index) => {
+    clearTimers();
+    setQChars(0);
+    setAChars(0);
+    setPhase("userTyping");
+    const q = convo[index].q;
+    const a = convo[index].a;
+
+    // type the question
+    for (let i = 1; i <= q.length; i++) {
+      after(i * 26, () => setQChars(i));
+    }
+    // switch to "thinking"
+    after(q.length * 26 + 350, () => setPhase("thinking"));
+    // switch to typing the answer
+    const answerStart = q.length * 26 + 350 + 900;
+    after(answerStart, () => setPhase("alexTyping"));
+    for (let i = 1; i <= a.length; i++) {
+      after(answerStart + i * 14, () => setAChars(i));
+    }
+    // pause, then move to next question
+    const doneAt = answerStart + a.length * 14 + 2600;
+    after(doneAt, () => setPhase("done"));
+    after(doneAt + 400, () => {
+      const next = (index + 1) % convo.length;
+      setActive(next);
+      runConvo(next);
+    });
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    runConvo(0);
+    return clearTimers;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const jumpTo = (index) => { setActive(index); runConvo(index); };
+
+  const q = convo[active].q.slice(0, qChars);
+  const a = convo[active].a.slice(0, aChars);
+  const showQCursor = phase === "userTyping";
+  const showThinking = phase === "thinking";
+  const showAnswer = phase === "alexTyping" || phase === "done";
+  const showACursor = phase === "alexTyping";
+
   return (
     <section style={{ padding: "100px 24px" }}>
       <SectionHeading eyebrow="AI Business Analyst" eyebrowColor="#3b82f6" title="Meet the AI behind your business." sub="Ask questions. Understand your data. Make better decisions." />
       <Reveal style={{ maxWidth: "680px", margin: "0 auto" }}>
+        <div ref={ref} />
         <Card hover={false} style={{ padding: "22px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "18px" }}>
             <div style={{ width: "32px", height: "32px", borderRadius: "9px", background: `linear-gradient(135deg, ${t.accent}, #3b82f6)`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "13px" }}>A</div>
             <div>
               <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "14px", color: t.textPrimary, margin: 0 }}>Alex · AI Analyst</p>
-              <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "11px", color: t.textMuted, margin: 0 }}>Connected to your live business data</p>
+              <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "11px", color: t.textMuted, margin: 0, display: "flex", alignItems: "center", gap: "5px" }}>
+                <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#2fae60", display: "inline-block" }} />
+                Connected to your live business data
+              </p>
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px", minHeight: "120px" }}>
-            <div style={{ alignSelf: "flex-end", background: t.accent, color: "#fff", padding: "10px 14px", borderRadius: "12px 12px 2px 12px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px", maxWidth: "85%" }}>
-              {convo[active].q}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px", minHeight: "128px" }}>
+            {/* user bubble */}
+            <div style={{
+              alignSelf: "flex-end", background: t.accent, color: "#fff", padding: "10px 14px",
+              borderRadius: "12px 12px 2px 12px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
+              maxWidth: "85%", minHeight: q.length ? "auto" : "0px",
+            }}>
+              {q}
+              {showQCursor && <span className="ai-caret" style={{ background: "#fff" }} />}
             </div>
-            <div style={{ alignSelf: "flex-start", background: t.bgHover, color: t.textPrimary, padding: "10px 14px", borderRadius: "12px 12px 12px 2px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px", maxWidth: "85%" }}>
-              {convo[active].a}
-            </div>
+
+            {/* thinking indicator */}
+            {showThinking && (
+              <div style={{
+                alignSelf: "flex-start", background: t.bgHover, padding: "12px 16px",
+                borderRadius: "12px 12px 12px 2px", display: "flex", gap: "4px", alignItems: "center",
+              }}>
+                {[0, 1, 2].map((d) => (
+                  <span key={d} style={{
+                    width: "6px", height: "6px", borderRadius: "50%", background: t.textMuted,
+                    animation: `typingDot 1.1s ease-in-out infinite`, animationDelay: `${d * 0.15}s`,
+                  }} />
+                ))}
+              </div>
+            )}
+
+            {/* alex reply bubble */}
+            {showAnswer && a.length > 0 && (
+              <div style={{
+                alignSelf: "flex-start", background: t.bgHover, color: t.textPrimary, padding: "10px 14px",
+                borderRadius: "12px 12px 12px 2px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px", maxWidth: "85%",
+              }}>
+                {a}
+                {showACursor && <span className="ai-caret" style={{ background: t.textPrimary }} />}
+              </div>
+            )}
           </div>
+
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-            {chips.map((c, i) => (
-              <button key={c} onClick={() => setActive(i % convo.length)} style={{
+            {convo.map((c, i) => (
+              <button key={c.chip} onClick={() => jumpTo(i)} style={{
                 fontFamily: "'DM Sans', sans-serif", fontSize: "12px", fontWeight: 600,
                 padding: "7px 13px", borderRadius: "99px", cursor: "pointer",
-                border: `1px solid ${t.border}`, background: "transparent", color: t.textMuted,
-              }}>{c}</button>
+                border: `1px solid ${i === active ? t.accent : t.border}`,
+                background: i === active ? t.accent + "18" : "transparent",
+                color: i === active ? t.accent : t.textMuted,
+                transition: "all 0.2s ease",
+              }}>{c.chip}</button>
             ))}
           </div>
         </Card>
@@ -460,10 +628,10 @@ function BusinessIntelligence() {
   return (
     <section style={{ padding: "100px 24px" }}>
       <SectionHeading title="Your data shouldn't just sit there." />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "16px", maxWidth: "1000px", margin: "0 auto 56px" }}>
+      <div className="bi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "16px", maxWidth: "1000px", margin: "0 auto 56px" }}>
         {cards.map((c, i) => (
           <Reveal key={c.title} delay={i * 60}>
-            <Card style={{ padding: "20px" }}>
+            <Card className="lift-hover" style={{ padding: "20px" }}>
               <h4 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "15px", color: t.textPrimary, margin: "0 0 8px" }}>{c.title}</h4>
               <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: t.textMuted, margin: 0, lineHeight: 1.5 }}>{c.body}</p>
             </Card>
@@ -529,19 +697,21 @@ function FraudSecurity() {
 function BusinessHealth() {
   const { t } = useTheme();
   const stats = [
-    { label: "Total Invested", value: "₹12.4L" },
-    { label: "Revenue", value: "₹18.9L" },
-    { label: "Net Profit", value: "₹6.5L" },
-    { label: "Supplier Pending", value: "₹1.2L" },
-    { label: "Customer Pending", value: "₹0.8L" },
+    { label: "Total Invested", target: 12.4, decimals: 1 },
+    { label: "Revenue", target: 18.9, decimals: 1, up: true },
+    { label: "Net Profit", target: 6.5, decimals: 1, up: true },
+    { label: "Supplier Pending", target: 1.2, decimals: 1 },
+    { label: "Customer Pending", target: 0.8, decimals: 1 },
   ];
   return (
     <section style={{ padding: "100px 24px" }}>
       <SectionHeading title="Know the real health of your business." sub="See what you've invested, what you've earned and what still needs attention." />
       <Reveal>
-        <Card style={{ padding: "26px", maxWidth: "900px", margin: "0 auto" }}>
+        <Card className="lift-hover" style={{ padding: "26px", maxWidth: "900px", margin: "0 auto" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: "22px" }}>
-            {stats.map((s) => <StatLine key={s.label} label={s.label} value={s.value} />)}
+            {stats.map((s) => (
+              <AnimatedStat key={s.label} label={s.label} prefix="₹" suffix="L" target={s.target * 10} decimals={1} up={s.up} />
+            ))}
           </div>
         </Card>
       </Reveal>
@@ -557,15 +727,15 @@ function Analytics() {
   return (
     <section style={{ padding: "100px 24px", background: t.bgHover + "40" }}>
       <SectionHeading title="From numbers to clarity." />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: "18px", maxWidth: "1000px", margin: "0 auto" }}>
+      <div className="analytics-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: "18px", maxWidth: "1000px", margin: "0 auto" }}>
         {[
-          { title: "Revenue Overview", body: <MiniBarChart /> },
-          { title: "Order Status", body: <StatLine label="Completed" value="284" up /> },
-          { title: "Stock Levels", body: <StatLine label="In Stock" value="1,842" /> },
-          { title: "Customer Growth", body: <StatLine label="New This Month" value="96" up /> },
+          { title: "Revenue Overview", body: <AnimatedLineChart color={t.accent} /> },
+          { title: "Order Status", body: <AnimatedStat label="Completed" target={284} up /> },
+          { title: "Stock Levels", body: <AnimatedLineChart color="#3b82f6" points={[80, 76, 82, 70, 74, 65, 68, 60]} /> },
+          { title: "Customer Growth", body: <AnimatedStat label="New This Month" target={96} up /> },
         ].map((c, i) => (
           <Reveal key={c.title} delay={i * 60}>
-            <Card style={{ padding: "18px" }}>
+            <Card className="lift-hover" style={{ padding: "18px", overflow: "hidden" }}>
               <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: t.textMuted, margin: "0 0 14px" }}>{c.title}</p>
               {c.body}
             </Card>
@@ -628,9 +798,12 @@ function EmployeeAccess() {
           </Card>
         </Reveal>
         <Reveal delay={100}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+          <div className="employee-feat-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
             {features.map((f) => (
-              <div key={f} style={{ padding: "12px 14px", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: "10px", fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: t.textMuted }}>{f}</div>
+              <div key={f} style={{ padding: "12px 14px", background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: "10px", fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: t.textMuted, transition: "border-color 0.15s ease" }}
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = t.accent + "55"}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = t.border}
+              >{f}</div>
             ))}
           </div>
         </Reveal>
@@ -645,21 +818,36 @@ function EmployeeAccess() {
 function WhoItsFor() {
   const { t } = useTheme();
   const items = [
-    { title: "Retail", body: "Manage fast-moving stock and daily billing with ease." },
-    { title: "Fashion", body: "Track sizes, variants and seasonal inventory." },
-    { title: "Electronics", body: "Handle serial numbers, warranties and returns." },
-    { title: "Supermarkets", body: "Manage high SKU counts and rapid checkout." },
-    { title: "Multi-store Businesses", body: "Get a unified view across every location." },
+    { title: "Retail", body: "Manage fast-moving stock and daily billing with ease.", icon: "◫", color: "#3b82f6" },
+    { title: "Fashion", body: "Track sizes, variants and seasonal inventory.", icon: "◐", color: "#e08a2c" },
+    { title: "Electronics", body: "Handle serial numbers, warranties and returns.", icon: "◈", color: t.accent },
+    { title: "Supermarkets", body: "Manage high SKU counts and rapid checkout.", icon: "◉", color: "#2fae60" },
+    { title: "Multi-store Businesses", body: "Get a unified view across every location.", icon: "◪", color: "#8b5cf6" },
   ];
   return (
     <section style={{ padding: "100px 24px" }}>
       <SectionHeading title="Built for every kind of business." />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "16px", maxWidth: "1100px", margin: "0 auto" }}>
+      <div className="who-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "16px", maxWidth: "1100px", margin: "0 auto" }}>
         {items.map((it, i) => (
           <Reveal key={it.title} delay={i * 50}>
-            <Card style={{ padding: "20px" }}>
-              <h4 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "15px", color: t.textPrimary, margin: "0 0 8px" }}>{it.title}</h4>
-              <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: t.textMuted, margin: 0, lineHeight: 1.5 }}>{it.body}</p>
+            <Card className="lift-hover" style={{ padding: 0, overflow: "hidden" }}>
+              <div style={{
+                height: "84px", position: "relative", overflow: "hidden",
+                background: `linear-gradient(135deg, ${it.color}30, ${it.color}08)`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <span style={{
+                  fontSize: "30px", color: it.color, transition: "transform 0.3s ease",
+                }} className="who-icon">{it.icon}</span>
+                <span style={{
+                  position: "absolute", width: "120px", height: "120px", borderRadius: "50%",
+                  background: it.color + "22", top: "-50px", right: "-30px",
+                }} />
+              </div>
+              <div style={{ padding: "18px 20px" }}>
+                <h4 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "15px", color: t.textPrimary, margin: "0 0 8px" }}>{it.title}</h4>
+                <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: t.textMuted, margin: 0, lineHeight: 1.5 }}>{it.body}</p>
+              </div>
             </Card>
           </Reveal>
         ))}
@@ -713,10 +901,10 @@ function Pricing({ onStart }) {
         </button>
         <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: yearly ? t.textPrimary : t.textMuted, fontWeight: 600 }}>Yearly</span>
       </Reveal>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: "18px", maxWidth: "1100px", margin: "0 auto" }}>
+      <div className="pricing-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: "18px", maxWidth: "1100px", margin: "0 auto" }}>
         {plans.map((p, i) => (
           <Reveal key={p.name} delay={i * 60}>
-            <Card style={{ padding: "24px", borderColor: p.featured ? t.accent : t.border, position: "relative" }}>
+            <Card className="lift-hover" style={{ padding: "24px", borderColor: p.featured ? t.accent : t.border, position: "relative" }}>
               {p.featured && <div style={{ position: "absolute", top: "-11px", left: "20px" }}><Pill>Most Popular</Pill></div>}
               <h4 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "17px", color: t.textPrimary, margin: "6px 0 4px" }}>{p.name}</h4>
               <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: t.textMuted, margin: "0 0 16px" }}>{p.desc}</p>
@@ -755,7 +943,7 @@ function Comparison() {
             <span style={{ fontFamily: "'Syne', sans-serif", fontSize: "12px", fontWeight: 700, color: t.accent, textAlign: "center" }}>This Platform</span>
           </div>
           {rows.map((r, i) => (
-            <div key={r} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", padding: "12px 20px", borderBottom: i < rows.length - 1 ? `1px solid ${t.border}` : "none", alignItems: "center" }}>
+            <div key={r} className="compare-row" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", padding: "12px 20px", borderBottom: i < rows.length - 1 ? `1px solid ${t.border}` : "none", alignItems: "center", transition: "background 0.15s ease" }}>
               <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: t.textPrimary }}>{r}</span>
               <span style={{ textAlign: "center", color: traditional[i] ? "#2fae60" : t.textMuted }}>{traditional[i] ? "✓" : "—"}</span>
               <span style={{ textAlign: "center", color: "#2fae60" }}>✓</span>
@@ -812,7 +1000,7 @@ function FAQ() {
       <div style={{ maxWidth: "700px", margin: "0 auto" }}>
         {faqs.map(([q, a], i) => (
           <Reveal key={q} delay={i * 30}>
-            <div style={{ borderBottom: `1px solid ${t.border}` }}>
+            <div className="faq-row" style={{ borderBottom: `1px solid ${t.border}`, borderRadius: "10px", transition: "background 0.15s ease" }}>
               <button onClick={() => setOpen(open === i ? null : i)} style={{
                 width: "100%", textAlign: "left", background: "transparent", border: "none", cursor: "pointer",
                 padding: "16px 4px", display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -1012,12 +1200,34 @@ export default function LandingPage() {
       <style>{`
         @keyframes floatY { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
         @keyframes pulseRing { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.8); opacity: 0; } }
+        @keyframes fadeInDot { from { opacity: 0; transform: scale(0.3); } to { opacity: 1; transform: scale(1); } }
+        @keyframes typingDot { 0%,60%,100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
+        .ai-caret { display: inline-block; width: 2px; height: 12px; margin-left: 2px; vertical-align: middle; animation: caretBlink 0.8s step-end infinite; }
+        @keyframes caretBlink { 0%,50% { opacity: 1; } 51%,100% { opacity: 0; } }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes gradientMove { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+
+        /* ── Tablet ── */
         @media (max-width: 900px) {
           .landing-nav-links, .landing-nav-actions { display: none !important; }
           .landing-nav-burger { display: block !important; }
           .fraud-grid { grid-template-columns: 1fr !important; }
           .footer-grid { grid-template-columns: repeat(2,1fr) !important; }
+          .hero-float { display: none !important; }
         }
+        /* ── Mobile ── */
+        @media (max-width: 640px) {
+          .footer-grid { grid-template-columns: repeat(2,1fr) !important; gap: 28px 16px !important; }
+          .who-grid, .core-grid, .analytics-grid, .bi-grid, .pricing-grid, .employee-feat-grid { grid-template-columns: 1fr !important; }
+          .hero-stats-grid { grid-template-columns: repeat(2,1fr) !important; gap: 16px !important; }
+          .workflow-row { flex-wrap: nowrap !important; scroll-snap-type: x mandatory; }
+          .workflow-row > div { scroll-snap-align: start; }
+          section { padding-left: 18px !important; padding-right: 18px !important; }
+        }
+        .who-grid > div:hover .who-icon { transform: scale(1.15) rotate(-6deg); }
+        .feature-card:hover .feature-icon { transform: scale(1.1) rotate(-4deg); }
+        .faq-row:hover { background: ${t.bgHover}; }
+        .compare-row:hover { background: ${t.bgHover}; }
         @media (prefers-reduced-motion: reduce) {
           * { animation: none !important; transition: none !important; }
         }
