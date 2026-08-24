@@ -84,11 +84,15 @@ function Eyebrow({ children, color }) {
   const { t } = useTheme();
   return (
     <span style={{
-      display: "inline-block", fontFamily: "'DM Sans', sans-serif",
-      fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em",
+      display: "inline-flex", alignItems: "center", gap: "8px",
+      fontFamily: "'DM Sans', sans-serif",
+      fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em",
       textTransform: "uppercase", color: color || t.accent,
       marginBottom: "14px",
-    }}>{children}</span>
+    }}>
+      <span style={{ width: "16px", height: "1px", background: color || t.accent, display: "inline-block" }} />
+      {children}
+    </span>
   );
 }
 
@@ -120,9 +124,9 @@ function Card({ children, style = {}, hover = true, className = "" }) {
       onMouseLeave={() => hover && setHovered(false)}
       style={{
         background: t.bgCard, border: `1px solid ${t.border}`,
-        borderRadius: "18px", transition: "transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
-        transform: hovered ? "translateY(-3px)" : "translateY(0)",
-        boxShadow: hovered ? "0 10px 30px -12px rgba(0,0,0,0.18)" : "none",
+        borderRadius: "18px", transition: "transform 0.25s cubic-bezier(0.22,1,0.36,1), box-shadow 0.25s ease, border-color 0.25s ease",
+        transform: hovered ? "translateY(-4px)" : "translateY(0)",
+        boxShadow: hovered ? "0 16px 36px -14px rgba(0,0,0,0.22)" : "0 1px 2px rgba(0,0,0,0.02)",
         borderColor: hovered ? t.accent + "55" : t.border,
         ...style,
       }}
@@ -146,40 +150,33 @@ function Pill({ children, color }) {
 function Button({ children, variant = "primary", onClick, style = {} }) {
   const { t } = useTheme();
   const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
   const base = {
     fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "14px",
     padding: "13px 24px", borderRadius: "10px", cursor: "pointer",
-    border: "1px solid transparent", transition: "all 0.15s ease",
+    border: "1px solid transparent", transition: "all 0.18s cubic-bezier(0.22,1,0.36,1)",
     display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px",
+    transform: pressed ? "scale(0.97)" : hovered ? "scale(1.015)" : "scale(1)",
+    outline: "none",
   };
   const variants = {
-    primary: { background: hovered ? t.accentLight : t.accent, color: "#fff" },
-    secondary: { background: "transparent", borderColor: t.border, color: t.textPrimary, ...(hovered ? { background: t.bgHover } : {}) },
+    primary: {
+      background: hovered ? t.accentLight : t.accent, color: "#fff",
+      boxShadow: hovered ? `0 8px 22px -8px ${t.accent}88` : `0 4px 14px -8px ${t.accent}66`,
+    },
+    secondary: { background: "transparent", borderColor: t.border, color: t.textPrimary, ...(hovered ? { background: t.bgHover, borderColor: t.accent + "55" } : {}) },
     ghost: { background: "transparent", color: t.textMuted, ...(hovered ? { color: t.textPrimary } : {}) },
   };
   return (
     <button
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => { setHovered(false); setPressed(false); }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      className="lux-btn-focus"
       style={{ ...base, ...variants[variant], ...style }}
     >{children}</button>
-  );
-}
-
-function StatLine({ label, value, color, up }) {
-  const { t } = useTheme();
-  return (
-    <div>
-      <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: t.textMuted, margin: "0 0 4px" }}>{label}</p>
-      <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "20px", color: t.textPrimary, margin: 0 }}>
-        {value} {up !== undefined && (
-          <span style={{ fontSize: "11px", fontFamily: "'DM Sans', sans-serif", fontWeight: 700, color: up ? "#2fae60" : "#e5484d" }}>
-            {up ? "▲" : "▼"}
-          </span>
-        )}
-      </p>
-    </div>
   );
 }
 
@@ -274,12 +271,12 @@ function Hero({ onStart, onExplore }) {
       }} />
       <div style={{ maxWidth: "760px", margin: "0 auto 80px", textAlign: "center", position: "relative" }}>
         <Reveal>
-          <Eyebrow>AI-Powered Business Platform</Eyebrow>
+          <Eyebrow>Built for Modern Retail</Eyebrow>
           <h1 style={{
             fontFamily: "'Syne', sans-serif", fontWeight: 800,
             fontSize: "clamp(36px, 6vw, 60px)", letterSpacing: "-0.03em",
             lineHeight: 1.08, color: t.textPrimary, margin: "0 0 20px",
-          }}>Run Your Business Smarter With AI.</h1>
+          }}>Run Your Business Smarter.</h1>
           <p style={{
             fontFamily: "'DM Sans', sans-serif", fontSize: "17px", lineHeight: 1.6,
             color: t.textMuted, maxWidth: "560px", margin: "0 auto 34px",
@@ -376,6 +373,7 @@ function ProblemSolution() {
               display: "flex", alignItems: "center", justifyContent: "space-between",
               padding: "16px 20px", borderRadius: "14px",
               background: t.bgCard, border: `1px solid ${t.border}`, marginBottom: "10px",
+              transition: "border-color 0.2s ease",
             }}>
               <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "14px", color: t.textMuted }}>{r.from}</span>
               <span style={{ color: t.accent, fontFamily: "'DM Sans', sans-serif", fontWeight: 700 }}>→</span>
@@ -559,7 +557,7 @@ function AICopilot() {
 
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             {convo.map((c, i) => (
-              <button key={c.chip} onClick={() => jumpTo(i)} style={{
+              <button key={c.chip} onClick={() => jumpTo(i)} className="lux-btn-focus" style={{
                 fontFamily: "'DM Sans', sans-serif", fontSize: "12px", fontWeight: 600,
                 padding: "7px 13px", borderRadius: "99px", cursor: "pointer",
                 border: `1px solid ${i === active ? t.accent : t.border}`,
@@ -896,7 +894,7 @@ function Pricing({ onStart }) {
       <SectionHeading eyebrow="Pricing" title="Simple pricing that grows with you." />
       <Reveal style={{ display: "flex", justifyContent: "center", gap: "10px", marginBottom: "40px" }}>
         <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: !yearly ? t.textPrimary : t.textMuted, fontWeight: 600 }}>Monthly</span>
-        <button onClick={() => setYearly(!yearly)} style={{ width: "42px", height: "24px", borderRadius: "99px", background: yearly ? t.accent : t.border, border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
+        <button onClick={() => setYearly(!yearly)} className="lux-btn-focus" style={{ width: "42px", height: "24px", borderRadius: "99px", background: yearly ? t.accent : t.border, border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
           <span style={{ position: "absolute", top: "3px", left: yearly ? "21px" : "3px", width: "18px", height: "18px", borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
         </button>
         <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: yearly ? t.textPrimary : t.textMuted, fontWeight: 600 }}>Yearly</span>
@@ -904,7 +902,7 @@ function Pricing({ onStart }) {
       <div className="pricing-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: "18px", maxWidth: "1100px", margin: "0 auto" }}>
         {plans.map((p, i) => (
           <Reveal key={p.name} delay={i * 60}>
-            <Card className="lift-hover" style={{ padding: "24px", borderColor: p.featured ? t.accent : t.border, position: "relative" }}>
+            <Card className="lift-hover" style={{ padding: "24px", borderColor: p.featured ? t.accent : t.border, position: "relative", borderWidth: p.featured ? "1.5px" : "1px" }}>
               {p.featured && <div style={{ position: "absolute", top: "-11px", left: "20px" }}><Pill>Most Popular</Pill></div>}
               <h4 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "17px", color: t.textPrimary, margin: "6px 0 4px" }}>{p.name}</h4>
               <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: t.textMuted, margin: "0 0 16px" }}>{p.desc}</p>
@@ -1001,7 +999,7 @@ function FAQ() {
         {faqs.map(([q, a], i) => (
           <Reveal key={q} delay={i * 30}>
             <div className="faq-row" style={{ borderBottom: `1px solid ${t.border}`, borderRadius: "10px", transition: "background 0.15s ease" }}>
-              <button onClick={() => setOpen(open === i ? null : i)} style={{
+              <button onClick={() => setOpen(open === i ? null : i)} className="lux-btn-focus" style={{
                 width: "100%", textAlign: "left", background: "transparent", border: "none", cursor: "pointer",
                 padding: "16px 4px", display: "flex", justifyContent: "space-between", alignItems: "center",
               }}>
@@ -1066,7 +1064,7 @@ function Footer({ navigate }) {
             <span style={{ color: t.textPrimary }}>BIL</span><span style={{ color: t.accent }}>L</span><span style={{ color: t.textPrimary }}>LING</span>
           </span>
           <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: t.textMuted, marginTop: "10px", maxWidth: "220px", lineHeight: 1.6 }}>
-            The AI-powered operating system for modern businesses.
+            The operating system for modern businesses.
           </p>
         </div>
         {cols.map((c) => (
@@ -1086,19 +1084,33 @@ function Footer({ navigate }) {
 }
 
 /* ============================================================================
-   LANDING NAVBAR (new, landing-page specific)
+   LANDING NAVBAR (new, landing-page specific) — now with a right-side
+   sliding drawer for mobile, matching the pattern used across other
+   projects (Estatera / RetailSphere).
    ========================================================================== */
 function LandingNavbar({ navigate }) {
   const { t } = useTheme();
   const [scrolled, setScrolled] = useState(false);
+  const [scrollPct, setScrollPct] = useState(0);
   const [openMenu, setOpenMenu] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 12);
+    const onScroll = () => {
+      setScrolled(window.scrollY > 12);
+      const h = document.documentElement;
+      const total = h.scrollHeight - h.clientHeight;
+      setScrollPct(total > 0 ? (window.scrollY / total) * 100 : 0);
+    };
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  // lock body scroll while the drawer is open
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [mobileOpen]);
 
   const menus = {
     Product: [["Overview", "/"], ["Dashboard", "/dashboard"], ["Billing", "/billing"], ["Inventory", "/inventory"], ["Analytics", "/reports"]],
@@ -1110,79 +1122,143 @@ function LandingNavbar({ navigate }) {
   };
   const singlePaths = { Features: "/#features", Security: "/#security", Pricing: "/#pricing" };
 
-  // login / signup — routes them to auth pages
   const goLogin = () => navigate("/login");
   const goSignup = () => navigate("/signup");
+  const closeDrawer = () => setMobileOpen(false);
 
   return (
-    <nav style={{
-      position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "0 24px", height: "64px",
-      background: scrolled ? t.bg : t.bg + "cc",
-      backdropFilter: "blur(10px)",
-      borderBottom: `1px solid ${scrolled ? t.border : "transparent"}`,
-      transition: "background 0.25s ease, border-color 0.25s ease",
-    }}>
-      <span onClick={() => navigate("/")} style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "22px", letterSpacing: "-0.04em", cursor: "pointer", userSelect: "none" }}>
-        <span style={{ color: t.textPrimary }}>BIL</span><span style={{ color: t.accent }}>L</span><span style={{ color: t.textPrimary }}>LING</span>
-      </span>
+    <>
+      <nav style={{
+        position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "0 24px", height: "64px",
+        background: scrolled ? t.bg : t.bg + "cc",
+        backdropFilter: "blur(10px)",
+        borderBottom: `1px solid ${scrolled ? t.border : "transparent"}`,
+        transition: "background 0.25s ease, border-color 0.25s ease",
+      }}>
+        <span onClick={() => navigate("/")} style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "22px", letterSpacing: "-0.04em", cursor: "pointer", userSelect: "none" }}>
+          <span style={{ color: t.textPrimary }}>BIL</span><span style={{ color: t.accent }}>L</span><span style={{ color: t.textPrimary }}>LING</span>
+        </span>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "2px" }} className="landing-nav-links">
-        {Object.keys(menus).map((label) => (
-          <div key={label} onMouseEnter={() => setOpenMenu(label)} onMouseLeave={() => setOpenMenu(null)} style={{ position: "relative" }}>
-            <button onClick={() => !menus[label] && navigate(singlePaths[label])} style={{
-              padding: "8px 14px", borderRadius: "8px", fontFamily: "'DM Sans', sans-serif",
-              fontSize: "13px", fontWeight: 500, color: t.textMuted, background: "transparent",
-              border: "none", cursor: "pointer",
-            }}>{label}</button>
-            {menus[label] && openMenu === label && (
-              <div style={{
-                position: "absolute", top: "100%", left: 0, minWidth: "220px",
-                background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: "14px",
-                padding: "8px", boxShadow: "0 12px 30px -10px rgba(0,0,0,0.25)",
-              }}>
-                {menus[label].map(([l, p]) => (
-                  <p key={l} onClick={() => { navigate(p); setOpenMenu(null); }} style={{
-                    margin: 0, padding: "9px 12px", borderRadius: "8px", cursor: "pointer",
-                    fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: t.textPrimary,
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = t.bgHover}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                  >{l}</p>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "2px" }} className="landing-nav-links">
+          {Object.keys(menus).map((label) => (
+            <div key={label} onMouseEnter={() => setOpenMenu(label)} onMouseLeave={() => setOpenMenu(null)} style={{ position: "relative" }}>
+              <button onClick={() => !menus[label] && navigate(singlePaths[label])} className="lux-btn-focus" style={{
+                padding: "8px 14px", borderRadius: "8px", fontFamily: "'DM Sans', sans-serif",
+                fontSize: "13px", fontWeight: 500, color: t.textMuted, background: "transparent",
+                border: "none", cursor: "pointer",
+              }}>{label}</button>
+              {menus[label] && openMenu === label && (
+                <div style={{
+                  position: "absolute", top: "100%", left: 0, minWidth: "220px",
+                  background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: "14px",
+                  padding: "8px", boxShadow: "0 12px 30px -10px rgba(0,0,0,0.25)",
+                  animation: "menuFadeIn 0.15s ease",
+                }}>
+                  {menus[label].map(([l, p]) => (
+                    <p key={l} onClick={() => { navigate(p); setOpenMenu(null); }} style={{
+                      margin: 0, padding: "9px 12px", borderRadius: "8px", cursor: "pointer",
+                      fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: t.textPrimary,
+                      transition: "background 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = t.bgHover}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                    >{l}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "10px" }} className="landing-nav-actions">
-        <Button variant="ghost" onClick={goLogin}>Log in</Button>
-        <Button variant="primary" onClick={goSignup}>Start Free</Button>
-      </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }} className="landing-nav-actions">
+          <Button variant="ghost" onClick={goLogin}>Log in</Button>
+          <Button variant="primary" onClick={goSignup}>Start Free</Button>
+        </div>
 
-      <button className="landing-nav-burger" onClick={() => setMobileOpen(!mobileOpen)} style={{ display: "none", background: "transparent", border: "none", cursor: "pointer" }}>
-        <svg width="20" height="20" fill="none" stroke={t.textPrimary} strokeWidth="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-      </button>
+        {/* hamburger ⇄ close morph */}
+        <button
+          className="landing-nav-burger lux-btn-focus"
+          onClick={() => setMobileOpen((o) => !o)}
+          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          aria-expanded={mobileOpen}
+          style={{ display: "none", background: "transparent", border: "none", cursor: "pointer", width: "32px", height: "32px", position: "relative", zIndex: 201 }}
+        >
+          <span style={{
+            position: "absolute", top: "13px", left: "6px", width: "20px", height: "2px", borderRadius: "2px",
+            background: t.textPrimary, transition: "transform 0.25s ease, top 0.25s ease",
+            transform: mobileOpen ? "translateY(2px) rotate(45deg)" : "none",
+          }} />
+          <span style={{
+            position: "absolute", top: "19px", left: "6px", width: "20px", height: "2px", borderRadius: "2px",
+            background: t.textPrimary, transition: "transform 0.25s ease, opacity 0.2s ease",
+            transform: mobileOpen ? "translateY(-4px) rotate(-45deg)" : "none",
+          }} />
+        </button>
 
-      {mobileOpen && (
-        <div style={{ position: "fixed", top: "64px", left: 0, right: 0, bottom: 0, background: t.bg, zIndex: 99, padding: "20px", overflowY: "auto" }}>
-          {Object.entries(menus).map(([label, items]) => (
-            <div key={label} style={{ marginBottom: "14px" }}>
-              <p onClick={() => { if (!items) { navigate(singlePaths[label]); setMobileOpen(false); } }} style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "15px", color: t.textPrimary, margin: "0 0 8px" }}>{label}</p>
+        {/* thin scroll-progress accent line */}
+        <span style={{
+          position: "absolute", bottom: "-1px", left: 0, height: "2px",
+          width: `${scrollPct}%`, background: `linear-gradient(90deg, ${t.accent}, ${t.accent}aa)`,
+          transition: "width 0.1s linear",
+        }} />
+      </nav>
+
+      {/* backdrop */}
+      <div
+        onClick={closeDrawer}
+        style={{
+          position: "fixed", inset: 0, zIndex: 150,
+          background: "rgba(0,0,0,0.45)", backdropFilter: "blur(2px)",
+          opacity: mobileOpen ? 1 : 0,
+          pointerEvents: mobileOpen ? "auto" : "none",
+          transition: "opacity 0.3s ease",
+        }}
+      />
+
+      {/* right-side sliding drawer */}
+      <aside style={{
+        position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 200,
+        width: "min(320px, 84vw)", background: t.bg,
+        borderLeft: `1px solid ${t.border}`,
+        boxShadow: mobileOpen ? "-16px 0 40px -16px rgba(0,0,0,0.35)" : "none",
+        transform: mobileOpen ? "translateX(0)" : "translateX(100%)",
+        transition: "transform 0.32s cubic-bezier(0.22,1,0.36,1)",
+        padding: "22px 20px 24px", overflowY: "auto",
+        display: "flex", flexDirection: "column",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
+          <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "18px", letterSpacing: "-0.04em" }}>
+            <span style={{ color: t.textPrimary }}>BIL</span><span style={{ color: t.accent }}>L</span><span style={{ color: t.textPrimary }}>LING</span>
+          </span>
+        </div>
+
+        <div style={{ flex: 1 }}>
+          {Object.entries(menus).map(([label, items], gi) => (
+            <div key={label} style={{
+              marginBottom: "16px",
+              opacity: mobileOpen ? 1 : 0,
+              transform: mobileOpen ? "translateX(0)" : "translateX(16px)",
+              transition: `opacity 0.3s ease ${mobileOpen ? gi * 40 : 0}ms, transform 0.3s ease ${mobileOpen ? gi * 40 : 0}ms`,
+            }}>
+              <p
+                onClick={() => { if (!items) { navigate(singlePaths[label]); closeDrawer(); } }}
+                style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "15px", color: t.textPrimary, margin: "0 0 8px", cursor: items ? "default" : "pointer" }}
+              >{label}</p>
               {items && items.map(([l, p]) => (
-                <p key={l} onClick={() => { navigate(p); setMobileOpen(false); }} style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: t.textMuted, margin: "0 0 8px", paddingLeft: "10px" }}>{l}</p>
+                <p key={l} onClick={() => { navigate(p); closeDrawer(); }} style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: t.textMuted, margin: "0 0 8px", paddingLeft: "10px", cursor: "pointer" }}>{l}</p>
               ))}
             </div>
           ))}
-          <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
-            <Button variant="secondary" onClick={() => { goLogin(); setMobileOpen(false); }} style={{ flex: 1 }}>Log in</Button>
-            <Button variant="primary" onClick={() => { goSignup(); setMobileOpen(false); }} style={{ flex: 1 }}>Start Free</Button>
-          </div>
         </div>
-      )}
-    </nav>
+
+        <div style={{ display: "flex", gap: "10px", paddingTop: "14px", borderTop: `1px solid ${t.border}` }}>
+          <Button variant="secondary" onClick={() => { goLogin(); closeDrawer(); }} style={{ flex: 1 }}>Log in</Button>
+          <Button variant="primary" onClick={() => { goSignup(); closeDrawer(); }} style={{ flex: 1 }}>Start Free</Button>
+        </div>
+      </aside>
+    </>
   );
 }
 
@@ -1202,10 +1278,17 @@ export default function LandingPage() {
         @keyframes pulseRing { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.8); opacity: 0; } }
         @keyframes fadeInDot { from { opacity: 0; transform: scale(0.3); } to { opacity: 1; transform: scale(1); } }
         @keyframes typingDot { 0%,60%,100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
+        @keyframes menuFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
         .ai-caret { display: inline-block; width: 2px; height: 12px; margin-left: 2px; vertical-align: middle; animation: caretBlink 0.8s step-end infinite; }
         @keyframes caretBlink { 0%,50% { opacity: 1; } 51%,100% { opacity: 0; } }
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
         @keyframes gradientMove { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+
+        .lux-btn-focus:focus-visible {
+          outline: 2px solid ${t.accent};
+          outline-offset: 2px;
+          border-radius: 8px;
+        }
 
         /* ── Tablet ── */
         @media (max-width: 900px) {
