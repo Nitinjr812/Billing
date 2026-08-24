@@ -2,6 +2,12 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../components/ThemeContext";
+import {
+  AuthShell,
+  AnimatedInput,
+  PasswordInput,
+  MoneyButton,
+} from "./authUi";
 
 export default function Login() {
   const { login, verifyLoginOtp, resendOtp } = useAuth();
@@ -12,21 +18,28 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
+
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setInfo("");
     setLoading(true);
+
     try {
       await login(email, password);
+
       setStep("otp");
-      setInfo("OTP sent to your email");
+      setInfo("OTP email pe bheja gaya hai");
     } catch (err) {
       if (err.needsSignupVerification) {
-        setError("Account is not verified. Please verify your signup OTP.");
+        setError(
+          "Account is not verified. Please verify your signup OTP."
+        );
       } else {
         setError(err.message);
       }
@@ -38,7 +51,9 @@ export default function Login() {
   const handleOtpSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setInfo("");
     setLoading(true);
+
     try {
       await verifyLoginOtp(email, otp);
       navigate("/dashboard");
@@ -50,119 +65,298 @@ export default function Login() {
   };
 
   const handleResend = async () => {
+    if (resendCooldown > 0) return;
+
     setError("");
+    setInfo("");
+
     try {
       await resendOtp(email);
-      setInfo("OTP resent");
+
+      setInfo("OTP dobara bheja gaya");
+      setResendCooldown(30);
+
+      const iv = setInterval(() => {
+        setResendCooldown((c) => {
+          if (c <= 1) {
+            clearInterval(iv);
+            return 0;
+          }
+
+          return c - 1;
+        });
+      }, 1000);
     } catch (err) {
       setError(err.message);
     }
   };
 
+  /* =========================
+     OTP SCREEN
+  ========================= */
+  if (step === "otp") {
+    return (
+      <AuthShell eyebrow="One last step" badges={false}>
+        <h2
+          style={{
+            fontFamily: "'Syne', sans-serif",
+            fontWeight: 800,
+            fontSize: "24px",
+            color: t.textPrimary,
+            marginBottom: "4px",
+          }}
+        >
+          Verify your email
+        </h2>
+
+        <p
+          style={{
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: "13px",
+            color: t.textMuted,
+            marginBottom: "22px",
+          }}
+        >
+          {email} pe bheja gaya OTP daalo
+        </p>
+
+        <form
+          onSubmit={handleOtpSubmit}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
+          }}
+        >
+          <AnimatedInput
+            label="6-digit code"
+            type="text"
+            placeholder="••••••"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            maxLength={6}
+            required
+            style={{
+              textAlign: "center",
+              letterSpacing: "10px",
+              fontSize: "20px",
+              fontWeight: 700,
+              fontFamily: "'Syne', sans-serif",
+            }}
+          />
+
+          {info && !error && (
+            <p
+              style={{
+                color: t.accent,
+                fontSize: "12px",
+                margin: 0,
+              }}
+            >
+              {info}
+            </p>
+          )}
+
+          {error && (
+            <p
+              style={{
+                color: t.red,
+                fontSize: "12px",
+                margin: 0,
+                background: t.red + "14",
+                border: `1px solid ${t.red}33`,
+                borderRadius: "8px",
+                padding: "8px 12px",
+              }}
+            >
+              {error}
+            </p>
+          )}
+
+          <MoneyButton disabled={loading} loading={loading}>
+            {loading ? "Verifying..." : "Verify & Login"}
+          </MoneyButton>
+        </form>
+
+        <p
+          style={{
+            fontSize: "12px",
+            color: t.textMuted,
+            marginTop: "18px",
+            textAlign: "center",
+            fontFamily: "'DM Sans', sans-serif",
+          }}
+        >
+          OTP nahi mila?{" "}
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={resendCooldown > 0}
+            style={{
+              background: "none",
+              border: "none",
+              fontWeight: 700,
+              fontSize: "12px",
+              padding: 0,
+              color:
+                resendCooldown > 0 ? t.textMuted : t.accent,
+              cursor:
+                resendCooldown > 0
+                  ? "not-allowed"
+                  : "pointer",
+            }}
+          >
+            {resendCooldown > 0
+              ? `Resend in ${resendCooldown}s`
+              : "Resend"}
+          </button>
+        </p>
+
+        <p
+          style={{
+            fontSize: "12px",
+            color: t.textMuted,
+            marginTop: "12px",
+            textAlign: "center",
+            fontFamily: "'DM Sans', sans-serif",
+          }}
+        >
+          Wrong email?{" "}
+          <button
+            type="button"
+            onClick={() => {
+              setStep("password");
+              setOtp("");
+              setError("");
+              setInfo("");
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              color: t.accent,
+              fontWeight: 700,
+              fontSize: "12px",
+              padding: 0,
+              cursor: "pointer",
+            }}
+          >
+            Go back
+          </button>
+        </p>
+      </AuthShell>
+    );
+  }
+
+  /* =========================
+     LOGIN SCREEN
+  ========================= */
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: t.bgPage, padding: "20px" }}>
-      <div style={{ width: "100%", maxWidth: 380, background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: "16px", padding: "32px" }}>
-        {step === "password" ? (
-          <>
-            <h1 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "24px", color: t.textPrimary, marginBottom: "4px" }}>
-              Welcome back
-            </h1>
-            <p style={{ fontSize: "13px", color: t.textMuted, marginBottom: "24px" }}>
-              Login to your shop dashboard
-            </p>
+    <AuthShell eyebrow="Welcome back">
+      <h1
+        style={{
+          fontFamily: "'Syne', sans-serif",
+          fontWeight: 800,
+          fontSize: "26px",
+          color: t.textPrimary,
+          margin: "0 0 4px",
+          letterSpacing: "-0.02em",
+        }}
+      >
+        Welcome back
+      </h1>
 
-            <form onSubmit={handlePasswordSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                style={inputStyle(t)}
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                style={inputStyle(t)}
-              />
+      <p
+        style={{
+          fontFamily: "'DM Sans', sans-serif",
+          fontSize: "13px",
+          color: t.textMuted,
+          marginBottom: "22px",
+        }}
+      >
+        Login karke apna shop dashboard manage karo
+      </p>
 
-              <div style={{ textAlign: "right" }}>
-                <Link to="/forgot-password" style={{ fontSize: "12px", color: t.accent, fontWeight: 600, textDecoration: "none" }}>
-                  Forgot password?
-                </Link>
-              </div>
+      <form
+        onSubmit={handlePasswordSubmit}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "16px",
+        }}
+      >
+        <AnimatedInput
+          label="Email"
+          type="email"
+          placeholder="you@business.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
 
-              {error && <p style={{ color: t.red, fontSize: "12px", margin: 0 }}>{error}</p>}
+        <PasswordInput
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="••••••••"
+          required
+        />
 
-              <button type="submit" disabled={loading} style={buttonStyle(t, loading)}>
-                {loading ? "Checking..." : "Continue"}
-              </button>
-            </form>
+        <div style={{ textAlign: "right", marginTop: "-6px" }}>
+          <Link
+            to="/forgot-password"
+            style={{
+              fontSize: "12px",
+              color: t.accent,
+              fontWeight: 700,
+              textDecoration: "none",
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            Forgot password?
+          </Link>
+        </div>
 
-            <p style={{ fontSize: "12px", color: t.textMuted, marginTop: "20px", textAlign: "center" }}>
-              Don't have an account? <Link to="/signup" style={{ color: t.accent, fontWeight: 600 }}>Sign up</Link>
-            </p>
-          </>
-        ) : (
-          <>
-            <h1 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "24px", color: t.textPrimary, marginBottom: "4px" }}>
-              Enter OTP
-            </h1>
-            <p style={{ fontSize: "13px", color: t.textMuted, marginBottom: "24px" }}>
-              Enter the code sent to {email}
-            </p>
-
-            <form onSubmit={handleOtpSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <input
-                type="text"
-                placeholder="6-digit OTP"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                maxLength={6}
-                required
-                style={{ ...inputStyle(t), textAlign: "center", letterSpacing: "6px", fontSize: "18px" }}
-              />
-
-              {info && !error && <p style={{ color: t.accent, fontSize: "12px", margin: 0 }}>{info}</p>}
-              {error && <p style={{ color: t.red, fontSize: "12px", margin: 0 }}>{error}</p>}
-
-              <button type="submit" disabled={loading} style={buttonStyle(t, loading)}>
-                {loading ? "Verifying..." : "Verify & Login"}
-              </button>
-            </form>
-
-            <p style={{ fontSize: "12px", color: t.textMuted, marginTop: "16px", textAlign: "center" }}>
-              Didn't get the OTP?{" "}
-              <button
-                onClick={handleResend}
-                style={{ background: "none", border: "none", color: t.accent, fontWeight: 600, cursor: "pointer", fontSize: "12px", padding: 0 }}
-              >
-                Resend
-              </button>
-            </p>
-          </>
+        {error && (
+          <p
+            style={{
+              color: t.red,
+              fontSize: "12px",
+              margin: 0,
+              background: t.red + "14",
+              border: `1px solid ${t.red}33`,
+              borderRadius: "8px",
+              padding: "8px 12px",
+            }}
+          >
+            {error}
+          </p>
         )}
-      </div>
-    </div>
+
+        <MoneyButton disabled={loading} loading={loading}>
+          {loading ? "Checking..." : "Continue"}
+        </MoneyButton>
+      </form>
+
+      <p
+        style={{
+          fontSize: "12px",
+          color: t.textMuted,
+          marginTop: "22px",
+          textAlign: "center",
+          fontFamily: "'DM Sans', sans-serif",
+        }}
+      >
+        Don't have an account?{" "}
+        <Link
+          to="/signup"
+          style={{
+            color: t.accent,
+            fontWeight: 700,
+            textDecoration: "none",
+          }}
+        >
+          Sign up
+        </Link>
+      </p>
+    </AuthShell>
   );
-}
-
-export function inputStyle(t) {
-  return {
-    padding: "10px 14px", borderRadius: "10px", border: `1px solid ${t.border}`,
-    background: t.bgPage, color: t.textPrimary, fontSize: "13px", outline: "none",
-    fontFamily: "'DM Sans', sans-serif",
-  };
-}
-
-export function buttonStyle(t, loading) {
-  return {
-    padding: "11px", borderRadius: "10px", border: "none",
-    background: loading ? `${t.accent}80` : t.accent, color: "#fff",
-    fontWeight: 700, fontSize: "13px", cursor: loading ? "not-allowed" : "pointer",
-    fontFamily: "'DM Sans', sans-serif", marginTop: "6px",
-  };
 }
