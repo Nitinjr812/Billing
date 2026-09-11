@@ -2,20 +2,22 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../components/ThemeContext";
 import { useNotifications } from "../components/NotificationContext";
-import { useAuth } from "../context/AuthContext"; // ⬅️ adjust path if AuthContext file is elsewhere
+import { useAuth } from "../context/AuthContext";
+import { useNavPermissions } from "../context/NavPermissionsContext";
 
 // ─── NAV ITEMS with routes ────────────────────────────────────────────────────
 export const NAV_ITEMS = [
-  { label: "Dashboard",     icon: "⬡", path: "/dashboard"     },
-  { label: "Inventory",     icon: "◫", path: "/inventory"     },
-  { label: "Billing",        icon: "◳", path: "/Billing"        },
-  { label: "Customers",     icon: "◉", path: "/customers"     },
-  { label: "Suppliers",     icon: "🏭", path: "/suppliers"    },  
-  { label: "Stocks",        icon: "◈", path: "/stocks"        },
-  { label: "Notifications", icon: "◎", path: "/notifications" },
-  { label: "Reports",       icon: "◪", path: "/reports"       },
-  { label: "Subscription",  icon: "✦", path: "/subscription"  },
-  { label: "Settings",      icon: "◐", path: "/settings"      }, 
+  { id: "dashboard",     label: "Dashboard",     icon: "⬡", path: "/dashboard"     },
+  { id: "inventory",     label: "Inventory",     icon: "◫", path: "/inventory"     },
+  { id: "billing",       label: "Billing",        icon: "◳", path: "/Billing"        },
+  { id: "tasks", label: "Tasks", icon: "📋", path: "/tasks" },
+  { id: "customers",     label: "Customers",     icon: "◉", path: "/customers"     },
+  { id: "suppliers",     label: "Suppliers",     icon: "🏭", path: "/suppliers"    },  
+  { id: "stocks",        label: "Stocks",        icon: "◈", path: "/stocks"        },
+  { id: "notifications", label: "Notifications", icon: "◎", path: "/notifications" },
+  { id: "reports",       label: "Reports",       icon: "◪", path: "/reports"       },
+  { id: "subscription",  label: "Subscription",  icon: "✦", path: "/subscription"  },
+  { id: "settings",      label: "Settings",      icon: "◐", path: "/settings"      }, 
 ];
 
 // ─── HOOK: isDesktop ──────────────────────────────────────────────────────────
@@ -98,7 +100,8 @@ export function Logo() {
 export function Navbar({ sidebarOpen, setSidebarOpen }) {
   const { t } = useTheme();
   const { unreadCount } = useNotifications();
-  const { user } = useAuth(); // ⬅️ dynamic user
+  const { user } = useAuth();
+  const { isVisible } = useNavPermissions();
   const navigate = useNavigate();
   const location = useLocation();
   const isDesktop = useIsDesktop();
@@ -107,7 +110,11 @@ export function Navbar({ sidebarOpen, setSidebarOpen }) {
   const initials = getInitials(displayName);
 
   const centerLinks = NAV_ITEMS.filter(
-    (n) => n.label !== "Notifications" && n.label !== "Settings" && n.label !== "Subscription"
+    (n) =>
+      n.label !== "Notifications" &&
+      n.label !== "Settings" &&
+      n.label !== "Subscription" &&
+      isVisible(n.id)
   );
 
   return (
@@ -151,7 +158,7 @@ export function Navbar({ sidebarOpen, setSidebarOpen }) {
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
         <ThemeToggle />
 
-        {/* Notification Bell — desktop */}
+        {/* Notification Bell — desktop (hamesha visible) */}
         {isDesktop && (
           <button
             onClick={() => navigate("/notifications")}
@@ -190,7 +197,7 @@ export function Navbar({ sidebarOpen, setSidebarOpen }) {
           </button>
         )}
 
-        {/* Settings — desktop */}
+        {/* Settings — desktop (hamesha visible) */}
         {isDesktop && (
           <button
             onClick={() => navigate("/settings")}
@@ -256,13 +263,16 @@ export function Navbar({ sidebarOpen, setSidebarOpen }) {
 export function Sidebar({ open, onClose }) {
   const { t } = useTheme();
   const { unreadCount } = useNotifications();
-  const { user } = useAuth(); // ⬅️ dynamic user
+  const { user } = useAuth();
+  const { isVisible } = useNavPermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
   const displayName = user?.name || "Guest";
   const displayEmail = user?.email || "";
   const initials = getInitials(displayName);
+
+  const visibleNavItems = NAV_ITEMS.filter((item) => isVisible(item.id));
 
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
@@ -305,7 +315,7 @@ export function Sidebar({ open, onClose }) {
 
         {/* Nav Links */}
         <nav style={{ flex: 1, padding: "12px", overflowY: "auto" }}>
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             const isNotif  = item.label === "Notifications";
             return (

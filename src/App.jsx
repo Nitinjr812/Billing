@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ThemeProvider, useTheme } from "./components/ThemeContext";
 import { NotificationProvider } from "./components/NotificationContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { NavPermissionsProvider, useNavPermissions } from "./context/NavPermissionsContext";
+import { SuperAdminAuthProvider, useSuperAdminAuth } from "./context/SuperAdminAuthContext";
+import { SuperAdminUIProvider } from "./context/SuperAdminUIContext";
 import { Navbar, Sidebar, NAV_ITEMS } from "./components/Navbar";
 import GlobalScrollbar from "./components/GlobalScrollbar";
 import Login from "./pages/Login";
@@ -21,16 +24,26 @@ import Suppliers from "./pages/Supliers";
 import ForgotPassword from "./pages/ForgotPassword";
 import VerifyEmail from "./pages/VerifyEmail";
 import LandingPage from "./pages/Landingpage";
+import SuperAdminLogin from "./pages/SuperAdminLogin";
+import SuperAdminDashboard from "./pages/SuperAdminDashboard";
+import Tasks from "../src/pages/Tasks";
 
 // ─── PROTECTED ROUTE WRAPPER ──────────────────────────────────────────────
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return null; // ya ek loading spinner
+  if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
 
-// ─── ROOT ("/") — landing page for guests, dashboard for logged-in users ──
+// ─── SUPER ADMIN PROTECTED ROUTE ──────────────────────────────────────────
+function SuperAdminProtectedRoute({ children }) {
+  const { token } = useSuperAdminAuth();
+  if (!token) return <Navigate to="/sa-x7k9q2-login" replace />;
+  return children;
+}
+
+// ─── ROOT ("/") ────────────────────────────────────────────────────────────
 function RootRoute() {
   const { user, loading } = useAuth();
   if (loading) return null;
@@ -38,10 +51,30 @@ function RootRoute() {
   return <LandingPage />;
 }
 
+// ─── NAV GUARD — staff ko URL type karke restricted page pe jaane se roke ──
+function useNavGuard() {
+  const { user } = useAuth();
+  const { isVisible, loading } = useNavPermissions();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!user || loading) return;
+    const current = NAV_ITEMS.find((n) =>
+      location.pathname.toLowerCase().startsWith(n.path.toLowerCase())
+    );
+    if (current && !isVisible(current.id)) {
+      navigate("/notifications", { replace: true });
+    }
+  }, [user, loading, location.pathname, isVisible, navigate]);
+}
+
 // ─── INNER APP ────────────────────────────────────────────────────────────────
 function AppInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t } = useTheme();
+
+  useNavGuard();
 
   useEffect(() => {
     const handleResize = () => {
@@ -55,12 +88,22 @@ function AppInner() {
     <>
       <GlobalScrollbar />
       <Routes>
-        {/* ─ Public routes ─ */}
         <Route path="/" element={<RootRoute />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/verify-email/:token" element={<VerifyEmail />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+
+        {/* ─ Super Admin routes (secret, standalone) ─ */}
+        <Route path="/sa-x7k9q2-login" element={<SuperAdminLogin />} />
+        <Route
+          path="/sa-x7k9q2-dashboard"
+          element={
+            <SuperAdminProtectedRoute>
+              <SuperAdminDashboard />
+            </SuperAdminProtectedRoute>
+          }
+        />
 
         {/* ─ Protected app shell ─ */}
         <Route
@@ -76,6 +119,7 @@ function AppInner() {
                     <Route path="/subscription" element={<Subscription />} />
                     <Route path="/inventory" element={<Inventory />} />
                     <Route path="/billing" element={<Orders />} />
+                    <Route path="/tasks" element={<Tasks />} />
                     <Route path="/customers" element={<Customers />} />
                     <Route path="/stocks" element={<Stocks />} />
                     <Route path="/reports" element={<Reports />} />
@@ -100,11 +144,17 @@ export default function App() {
   return (
     <BrowserRouter>
       <ThemeProvider>
-        <AuthProvider>
-          <NotificationProvider>
-            <AppInner />
-          </NotificationProvider>
-        </AuthProvider>
+        <SuperAdminAuthProvider>
+          <SuperAdminUIProvider>
+            <AuthProvider>
+              <NavPermissionsProvider>
+                <NotificationProvider>
+                  <AppInner />
+                </NotificationProvider>
+              </NavPermissionsProvider>
+            </AuthProvider>
+          </SuperAdminUIProvider>
+        </SuperAdminAuthProvider>
       </ThemeProvider>
     </BrowserRouter>
   );

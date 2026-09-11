@@ -1,118 +1,63 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-
-const BACKEND = "https://billing-backend-tawny.vercel.app";
-
-// ─── Turn the backend's alert buckets into a flat notification list ───────
-// data looks like: { outOfStock: [product, ...], lowStock: [...], slowMoving: [...] }
-// Each product has at least: _id, name, stock, price.
-//
-// _id is built as "<type>-<product._id>" so that:
-//   1. Re-scanning doesn't create duplicate notifications for the same issue.
-//   2. Read/unread status survives a rescan (see scanStock below).
-function buildNotifications(data) {
-  const built = [];
-
-  (data?.outOfStock || []).forEach((p) => {
-    built.push({
-      _id: `outOfStock-${p._id}`,
-      type: "outOfStock",
-      productName: p.name,
-      message: `${p.name} is completely out of stock.`,
-      createdAt: new Date().toISOString(),
-    });
-  });
-
-  (data?.lowStock || []).forEach((p) => {
-    built.push({
-      _id: `lowStock-${p._id}`,
-      type: "lowStock",
-      productName: p.name,
-      message: `${p.name} is down to ${p.stock} units. Reorder soon.`,
-      createdAt: new Date().toISOString(),
-    });
-  });
-
-  (data?.slowMoving || []).forEach((p) => {
-    built.push({
-      _id: `slowMoving-${p._id}`,
-      type: "slowMoving",
-      productName: p.name,
-      message: `${p.name} hasn't sold in a while. Consider a discount or promo.`,
-      createdAt: new Date().toISOString(),
-    });
-  });
-
-  return built;
-}
+import { useApi } from "../hooks/useApi";
+import { useAuth } from "../context/AuthContext";
 
 const NotificationContext = createContext(null);
 
 export function NotificationProvider({ children }) {
+  const { user } = useAuth();
+  const api = useApi();
   const [notifications, setNotifications] = useState([]);
-  const [readIds, setReadIds] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
 
-  // scanStock = fetch the latest alerts from the backend and rebuild the
-  // notification list. Called on mount, by the "🔄 Rescan Stock" button,
-  // and by StockAlertPopup after a suggestion is requested.
+  const load = useCallback(() => {
+    if (!user) { setLoading(false); return; }
+    setLoading(true);
+    api("/notifications")
+      .then((res) => setNotifications(Array.isArray(res?.notifications) ? res.notifications : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  useEffect(() => { load(); }, [load]);
+
   const scanStock = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${BACKEND}/api/products/alerts`);
-      const data = await res.json();
-      const built = buildNotifications(data);
-
-      setNotifications((prev) =>
-        built.map((n) => ({
-          ...n,
-          read: readIds.has(n._id) || prev.find((p) => p._id === n._id)?.read || false,
-        }))
-      );
-    } catch {
-      // Network/API hiccup — keep whatever notifications we already had
-      // instead of wiping the list to empty.
+      await api("/notifications/scan-stock", { method: "POST" });
+      await load();
     } finally {
       setLoading(false);
     }
-  }, [readIds]);
+  }, [load]);
 
-  useEffect(() => {
-    scanStock();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const markAsRead = (id) => {
-    setReadIds((prev) => new Set(prev).add(id));
-    setNotifications((prev) =>
-      prev.map((n) => (n._id === id ? { ...n, read: true } : n))
-    );
+  const markAsRead = async (id) => {
+    setNotifications((prev) => prev.map((n) => (n._id === id ? { ...n, read: true } : n)));
+    try {
+      await api(`/notifications/${id}/read`, { method: "PATCH" });
+    } catch {
+      load(); // fail hua toh real state se sync kar
+    }
   };
 
-  const markAllAsRead = () => {
-    setNotifications((prev) => {
-      const ids = prev.map((n) => n._id);
-      setReadIds((r) => new Set([...r, ...ids]));
-      return prev.map((n) => ({ ...n, read: true }));
-    });
+  const markAllAsRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await api("/notifications/read-all", { method: "PATCH" });
+    } catch {
+      load();
+    }
   };
 
-  const clearAll = () => {
-    setNotifications([]);
-  };
+  // "Clear all" = sab read mark kar de (broadcast notifications poori shop
+  // ke liye shared hain, isliye delete karna sabke liye hata dega)
+  const clearAll = markAllAsRead;
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
     <NotificationContext.Provider
-      value={{
-        notifications,
-        unreadCount,
-        loading,
-        markAsRead,
-        markAllAsRead,
-        clearAll,
-        scanStock,
-      }}
+      value={{ notifications, unreadCount, loading, markAsRead, markAllAsRead, clearAll, scanStock }}
     >
       {children}
     </NotificationContext.Provider>

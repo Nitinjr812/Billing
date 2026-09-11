@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { useApi } from "../hooks/useApi";
 import { DiscountPermissionsSection } from "./DiscountPermissions";
-
-const BACKEND = "https://billing-backend-tawny.vercel.app";
+import { NAV_ITEMS as APP_NAV_ITEMS } from "../components/Navbar";
+import { useNavPermissions, ALWAYS_VISIBLE_IDS } from "../context/NavPermissionsContext";
 
 const INTEGRATIONS = [
   { name: "Razorpay",     desc: "Payment gateway",           status: "connected", icon: "💳", color: "#2563eb" },
@@ -22,13 +23,14 @@ const BILLING = {
   usage: { api: 68, storage: 42, seats: 75 },
 };
 
-const NAV_ITEMS = [
+const SETTINGS_NAV_ITEMS = [
   { id: "profile",       label: "Profile" },
   { id: "tax",           label: "Tax & GST" },
   { id: "discounts",     label: "Discount Limits" },
   { id: "notifications", label: "Notifications" },
   { id: "integrations",  label: "Integrations" },
   { id: "team",          label: "Team & Access" },
+  { id: "access",        label: "Access Control", ownerOnly: true },
   { id: "billing",       label: "Billing" },
   { id: "security",      label: "Security" },
 ];
@@ -41,25 +43,6 @@ const NOTIF_LABELS = {
   newCustomers:       { label: "New Customer Sign-ups",  desc: "Daily digest of new customer registrations" },
   weeklyReports:      { label: "Weekly Reports",         desc: "Auto-email full report every Monday 9 AM" },
 };
-
-// ── Small fetch helper with auth header ────────────────────────────────
-function useApi() {
-  const { token, logout } = useAuth();
-  return async (path, options = {}) => {
-    const res = await fetch(`${BACKEND}/api${path}`, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        ...(options.headers || {}),
-      },
-    });
-    if (res.status === 401) { logout(); throw new Error("Session expired, please login again"); }
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Request failed");
-    return data;
-  };
-}
 
 // ─── ICONS — single stroke-set, used consistently across nav ─────────────
 function NavIcon({ id, size = 17 }) {
@@ -103,6 +86,12 @@ function NavIcon({ id, size = 17 }) {
         <circle cx="17" cy="9.3" r="2.3" />
         <path d="M3.6 19.8c.8-3.1 2.9-4.9 5.4-4.9s4.6 1.8 5.4 4.9" />
         <path d="M14.8 15.3c1.9.4 3.4 2.1 3.9 4.5" />
+      </>
+    ),
+    access: (
+      <>
+        <rect x="5" y="10.5" width="14" height="9" rx="2" />
+        <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
       </>
     ),
     billing: (
@@ -261,9 +250,55 @@ function GhostBtn({ children, onClick, small, disabled, danger }) {
   );
 }
 
-// ─── SIGNATURE ELEMENT: the "official seal" avatar ────────────────────
-// A dashed ring rotates slowly around the initials, echoing an invoice
-// stamp — the one motif this billing product is built to be remembered by.
+// ─── ANIMATED VISIBILITY RADIO (Visible / Hidden segmented control) ──────
+function VisibilityRadio({ visible, onChange }) {
+  const { t } = useTheme();
+  return (
+    <div
+      style={{
+        position: "relative", display: "flex",
+        background: `${t.border}55`, borderRadius: 99,
+        padding: 3, width: 152, height: 34, flexShrink: 0,
+      }}
+    >
+      <div style={{
+        position: "absolute", top: 3, left: 3,
+        width: "calc(50% - 3px)", height: 28, borderRadius: 99,
+        background: visible ? t.green : t.red,
+        transform: visible ? "translateX(0%)" : "translateX(100%)",
+        transition: "transform 0.25s cubic-bezier(.4,0,.2,1), background 0.25s ease",
+      }} />
+      <button
+        type="button"
+        onClick={() => onChange(true)}
+        style={{
+          position: "relative", zIndex: 1, flex: 1, border: "none", background: "transparent",
+          borderRadius: 99, cursor: "pointer",
+          fontSize: 11, fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
+          color: visible ? "#fff" : t.textMuted,
+          transition: "color 0.2s ease",
+        }}
+      >Visible</button>
+      <button
+        type="button"
+        onClick={() => onChange(false)}
+        style={{
+          position: "relative", zIndex: 1, flex: 1, border: "none", background: "transparent",
+          borderRadius: 99, cursor: "pointer",
+          fontSize: 11, fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
+          color: !visible ? "#fff" : t.textMuted,
+          transition: "color 0.2s ease",
+        }}
+      >Hidden</button>
+    </div>
+  );
+}
+
+function getInitials(name = "") {
+  return name.trim().split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() || "U";
+}
+
+// ─── SEAL AVATAR ───────────────────────────────────────────────────────
 function SealAvatar({ initials, size = 40 }) {
   const { t } = useTheme();
   const ring = size + 14;
@@ -291,11 +326,7 @@ function SealAvatar({ initials, size = 40 }) {
   );
 }
 
-function getInitials(name = "") {
-  return name.trim().split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() || "U";
-}
-
-// ─── FLOATING TOAST — replaces inline "✅ / ❌" strings ─────────────────
+// ─── FLOATING TOAST ─────────────────────────────────────────────────────
 function Toast({ message, onDismiss }) {
   const { t } = useTheme();
 
@@ -331,7 +362,7 @@ function Toast({ message, onDismiss }) {
   );
 }
 
-// ─── SKELETON LOADER — shimmering placeholder shapes ──────────────────
+// ─── SKELETON LOADER ────────────────────────────────────────────────────
 function Skeleton({ width = "100%", height = 14, radius = 8, style = {} }) {
   const { t } = useTheme();
   return (
@@ -351,7 +382,7 @@ function SkeletonCircle({ size = 40, style = {} }) {
   return <Skeleton width={size} height={size} radius="50%" style={style} />;
 }
 
-// ─── SECTION: PROFILE (DYNAMIC) ───────────────────────────────────────────
+// ─── SECTION: PROFILE ──────────────────────────────────────────────────
 function ProfileSection() {
   const { t } = useTheme();
   const api = useApi();
@@ -461,7 +492,7 @@ function ProfileSection() {
   );
 }
 
-// ─── SECTION: TAX & GST (DYNAMIC) ─────────────────────────────────────────
+// ─── SECTION: TAX & GST ─────────────────────────────────────────────────
 const GST_RATES = [0, 5, 12, 18, 28];
 
 function TaxSection() {
@@ -576,7 +607,7 @@ function TaxSection() {
   );
 }
 
-// ─── SECTION: NOTIFICATIONS (DYNAMIC) ─────────────────────────────────────
+// ─── SECTION: NOTIFICATIONS ─────────────────────────────────────────────
 function NotificationsSection() {
   const { t } = useTheme();
   const api = useApi();
@@ -652,7 +683,7 @@ function NotificationsSection() {
   );
 }
 
-// ─── SECTION: INTEGRATIONS (STILL DEMO — future scope) ────────────────────
+// ─── SECTION: INTEGRATIONS (demo) ───────────────────────────────────────
 function IntegrationsSection() {
   const { t } = useTheme();
   const [list, setList] = useState(INTEGRATIONS);
@@ -692,7 +723,7 @@ function IntegrationsSection() {
   );
 }
 
-// ─── SECTION: TEAM (DYNAMIC) ──────────────────────────────────────────────
+// ─── SECTION: TEAM ───────────────────────────────────────────────────────
 function TeamSection() {
   const { t } = useTheme();
   const { user } = useAuth();
@@ -758,7 +789,6 @@ function TeamSection() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <SectionTitle sub="Manage team members and their access">Team & Access</SectionTitle>
 
-      {/* Invite via Shop ID */}
       {user.role === "owner" && (
         <Card>
           <Label>Invite Team Member</Label>
@@ -772,7 +802,6 @@ function TeamSection() {
         </Card>
       )}
 
-      {/* Member list */}
       <Card style={{ padding: 0, overflow: "hidden" }}>
         {members.map((m, i) => (
           <div key={m._id} style={{
@@ -802,7 +831,159 @@ function TeamSection() {
   );
 }
 
-// ─── SECTION: BILLING (STILL DEMO) ─────────────────────────────────────────
+// ─── SECTION: ACCESS CONTROL (naya — owner-only) ─────────────────────────
+// ─── SECTION: ACCESS CONTROL (per-staff, owner-only) ─────────────────────
+function AccessControlSection() {
+  const { t } = useTheme();
+  const api = useApi();
+  const [members, setMembers] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [loadingPerms, setLoadingPerms] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  // Sirf staff members load karo (owner ko list mein dikhane ki zaroorat nahi)
+  useEffect(() => {
+    api("/settings/team")
+      .then((data) => {
+        const staffOnly = data.filter((m) => m.role !== "owner");
+        setMembers(staffOnly);
+        if (staffOnly.length) setSelectedId(staffOnly[0]._id);
+      })
+      .catch((e) => setMsg("❌ " + e.message));
+  }, []);
+
+  // Jab bhi selected staff badle, uski permissions fetch karo
+  useEffect(() => {
+    if (!selectedId) return;
+    setLoadingPerms(true);
+    setDraft(null);
+    api(`/settings/team/${selectedId}/nav-permissions`)
+      .then((res) => setDraft(Array.isArray(res?.visible) ? res.visible : []))
+      .catch((e) => { setMsg("❌ " + e.message); setDraft([]); })
+      .finally(() => setLoadingPerms(false));
+  }, [selectedId]);
+
+  const restrictableItems = APP_NAV_ITEMS.filter((n) => !ALWAYS_VISIBLE_IDS.includes(n.id));
+
+  const toggleItem = (id, next) => {
+    setDraft((prev) => {
+      const current = Array.isArray(prev) ? prev : [];
+      return next ? (current.includes(id) ? current : [...current, id]) : current.filter((x) => x !== id);
+    });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api(`/settings/team/${selectedId}/nav-permissions`, {
+        method: "PUT",
+        body: JSON.stringify({ visible: draft }),
+      });
+      setMsg("✅ Access updated! Is member ko agle refresh pe naya menu dikhega.");
+    } catch (e) {
+      setMsg("❌ " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (members === null) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <SectionTitle sub="Choose what each staff member can see in the navbar">Access Control</SectionTitle>
+        <Card><Skeleton height={34} radius={10} /></Card>
+      </div>
+    );
+  }
+
+  if (members.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <SectionTitle sub="Choose what each staff member can see in the navbar">Access Control</SectionTitle>
+        <Card>
+          <p style={{ fontSize: 13, color: t.textMuted }}>
+            Abhi koi staff member nahi hai. "Team & Access" tab se Shop ID share karke staff ko invite kar, phir yahan unke liye access set kar sakega.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <SectionTitle sub="Har staff member ke liye alag se choose kar ki unhe navbar mein kya dikhna chahiye">
+        Access Control
+      </SectionTitle>
+
+      {/* Staff picker */}
+      <Card style={{ padding: 12 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {members.map((m) => {
+            const active = m._id === selectedId;
+            return (
+              <button
+                key={m._id}
+                type="button"
+                onClick={() => setSelectedId(m._id)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "6px 14px 6px 6px", borderRadius: 99,
+                  border: `1.5px solid ${active ? t.accent : t.border}`,
+                  background: active ? `${t.accent}15` : "transparent",
+                  color: active ? t.accent : t.textMuted,
+                  fontSize: 12, fontWeight: 600, cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif", transition: "all 0.15s",
+                }}
+              >
+                <SealAvatar initials={getInitials(m.name)} size={22} />
+                {m.name}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* Toggles for selected staff */}
+      {loadingPerms || draft === null ? (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          {Array.from({ length: 6 }).map((_, i, arr) => (
+            <div key={i} style={{
+              display: "flex", alignItems: "center", gap: 16, padding: "16px 24px",
+              borderBottom: i < arr.length - 1 ? `1px solid ${t.border}` : "none",
+            }}>
+              <Skeleton width={140} height={13} style={{ flex: 1 }} />
+              <Skeleton width={152} height={34} radius={99} />
+            </div>
+          ))}
+        </Card>
+      ) : (
+        <>
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            {restrictableItems.map((item, i, arr) => (
+              <div key={item.id} style={{
+                display: "flex", alignItems: "center", gap: 16, padding: "16px 24px",
+                borderBottom: i < arr.length - 1 ? `1px solid ${t.border}` : "none",
+              }}>
+                <span style={{ fontSize: 16, width: 22, textAlign: "center" }}>{item.icon}</span>
+                <p style={{ flex: 1, fontSize: 13, fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>{item.label}</p>
+                <VisibilityRadio visible={draft.includes(item.id)} onChange={(v) => toggleItem(item.id, v)} />
+              </div>
+            ))}
+          </Card>
+
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <PrimaryBtn onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save Access Settings"}</PrimaryBtn>
+          </div>
+        </>
+      )}
+
+      <Toast message={msg} onDismiss={() => setMsg("")} />
+    </div>
+  );
+}
+// ─── SECTION: BILLING (demo) ─────────────────────────────────────────────
 function BillingSection() {
   const { t } = useTheme();
   return (
@@ -828,7 +1009,7 @@ function BillingSection() {
   );
 }
 
-// ─── SECTION: SECURITY (DYNAMIC password, sessions still demo) ────────────
+// ─── SECTION: SECURITY ───────────────────────────────────────────────────
 function SecuritySection() {
   const { t } = useTheme();
   const api = useApi();
@@ -898,7 +1079,6 @@ function SecuritySection() {
         </div>
       </Card>
 
-      {/* Session */}
       <Card style={{ display: "flex", alignItems: "center", gap: 16 }}>
         <div style={{ flex: 1 }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>Log out</p>
@@ -907,7 +1087,6 @@ function SecuritySection() {
         <GhostBtn onClick={handleLogout}>Logout</GhostBtn>
       </Card>
 
-      {/* Danger Zone */}
       <Card style={{ border: `1px solid ${t.red}40` }}>
         <Label>Danger Zone</Label>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 8 }}>
@@ -928,10 +1107,14 @@ function SecuritySection() {
   );
 }
 
-// ─── MAIN SETTINGS PAGE ───────────────────────────────────────────────────────
+// ─── MAIN SETTINGS PAGE ───────────────────────────────────────────────────
 export default function Settings() {
   const { t } = useTheme();
+  const { user } = useAuth();
+  const isOwner = user?.role === "owner";
   const [active, setActive] = useState("profile");
+
+  const navItems = SETTINGS_NAV_ITEMS.filter((n) => !n.ownerOnly || isOwner);
 
   const sectionMap = {
     profile:       <ProfileSection />,
@@ -940,6 +1123,7 @@ export default function Settings() {
     notifications: <NotificationsSection />,
     integrations:  <IntegrationsSection />,
     team:          <TeamSection />,
+    access:        isOwner ? <AccessControlSection /> : <ProfileSection />,
     billing:       <BillingSection />,
     security:      <SecuritySection />,
   };
@@ -993,7 +1177,7 @@ export default function Settings() {
         </div>
 
         <div className="settings-nav-mobile" style={{ gap: 6, overflowX: "auto", paddingBottom: 4, scrollbarWidth: "none" }}>
-          {NAV_ITEMS.map((n) => (
+          {navItems.map((n) => (
             <button key={n.id} onClick={() => setActive(n.id)} style={{
               flexShrink: 0, display: "flex", alignItems: "center", gap: 6,
               padding: "6px 14px", borderRadius: 99,
@@ -1012,7 +1196,7 @@ export default function Settings() {
         <div className="settings-layout">
           <div className="settings-nav-desktop" style={{ position: "sticky", top: 88 }}>
             <Card style={{ padding: "8px 0" }}>
-              {NAV_ITEMS.map((n) => (
+              {navItems.map((n) => (
                 <button key={n.id} onClick={() => setActive(n.id)} style={{
                   display: "flex", alignItems: "center", gap: 10,
                   width: "100%", padding: "10px 18px",

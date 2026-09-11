@@ -7,24 +7,36 @@ const TYPE_LABELS = {
     outOfStock: "Out of Stock",
     lowStock: "Low Stock",
     slowMoving: "Slow Moving",
+    task_assigned: "New Task",
+    task_completed: "Task Done",
+    announcement: "Announcement",
 };
 
 const TYPE_ICONS = {
     outOfStock: "🚨",
     lowStock: "⚠️",
     slowMoving: "💸",
+    task_assigned: "📋",
+    task_completed: "✅",
+    announcement: "📢",
 };
 
 const TYPE_TITLES = {
     outOfStock: "Out of Stock",
     lowStock: "Low Stock",
     slowMoving: "Slow Moving Product",
+    task_assigned: "New Task",
+    task_completed: "Task Completed",
+    announcement: "Announcement",
 };
 
 const TYPE_COLORS = {
     outOfStock: { color: "#dc2626", bg: "#fee2e2" },
     lowStock: { color: "#d97706", bg: "#fef3c7" },
     slowMoving: { color: "#7c3aed", bg: "#ede9fe" },
+    task_assigned: { color: "#2563eb", bg: "#dbeafe" },
+    task_completed: { color: "#16a34a", bg: "#dcfce7" },
+    announcement: { color: "#0891b2", bg: "#cffafe" },
 };
 
 function timeAgo(dateStr) {
@@ -481,7 +493,7 @@ export default function Notifications() {
                                                         fontFamily: "'DM Sans', sans-serif",
                                                         fontSize: 14, fontWeight: n.read ? 500 : 700,
                                                         color: t.textPrimary,
-                                                    }}>{TYPE_TITLES[n.type] || n.productName || "Notification"}</span>
+                                                    }}>{n.title || TYPE_TITLES[n.type] || n.productName || "Notification"}</span>
                                                     <span style={{
                                                         fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 99,
                                                         color: typeStyle.color, background: typeStyle.bg,
