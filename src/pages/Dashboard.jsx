@@ -8,6 +8,7 @@ import { Bar, Doughnut, Line } from "react-chartjs-2";
 import { useTheme } from "../components/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import StockAlertPopup from "../components/StockAlertPopup";
+import InstallAppButton from "../components/InstallAppButton";
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement,
@@ -166,17 +167,6 @@ function computeKpis(stats, orders) {
 }
 
 // ─── Investment vs Profit — the "khata" math for the whole business ──────
-// Total Invested  = every rupee of goods bought from suppliers, whether
-//                    already paid or still pending (the stock is yours
-//                    either way, so it's a real cost).
-// Realized Revenue = only orders actually marked Completed. Pending orders
-//                    are money not in hand yet, so they don't count as
-//                    revenue until they clear.
-// Net Profit       = Realized Revenue − Total Invested.
-// The two "pending" numbers are shown separately so nothing is silently
-// hidden inside the profit figure — a pending payment to a supplier is a
-// debt you'll have to settle, and a pending payment from a customer is
-// money you're still owed.
 function computeBusinessHealth(orders, purchaseSummary) {
   const realizedRevenue = orders
     .filter((o) => o.status === "Completed")
@@ -203,9 +193,6 @@ function computeBusinessHealth(orders, purchaseSummary) {
 }
 
 // ─── live data hook (single source of truth for the whole dashboard) ──────
-// NOTE: now requires `token` — waits for auth to be ready, and sends
-// Authorization on every request. This is what was missing before and
-// causing the 401s on /orders, /orders/stats, /products, /products/alerts.
 function useDashboardData(token, authLoading, pollMs = 60000) {
   const [state, setState] = useState({
     loading: true,
@@ -219,9 +206,6 @@ function useDashboardData(token, authLoading, pollMs = 60000) {
   });
 
   useEffect(() => {
-    // Wait until AuthContext has actually finished restoring the token from
-    // localStorage. Firing requests before that sends "Bearer undefined"
-    // and the backend correctly rejects it with 401.
     if (authLoading || !token) return;
 
     let cancelled = false;
@@ -248,8 +232,6 @@ function useDashboardData(token, authLoading, pollMs = 60000) {
           alertsRes.json(),
         ]);
 
-        // Purchase/khata summary is treated as optional — if this route
-        // isn't deployed yet or fails, the rest of the dashboard still works.
         let purchaseSummary = { totalPurchased: 0, totalPaid: 0, totalPending: 0 };
         if (purchaseSummaryRes.ok) {
           const psData = await purchaseSummaryRes.json();
@@ -368,10 +350,6 @@ function AiChatWidget({ t }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  // AuthContext restores the user from localStorage asynchronously, so on
-  // first render `user` may still be null. Once it resolves, refresh the
-  // greeting with the real name — but only if the user hasn't started
-  // chatting yet (don't clobber an in-progress conversation).
   useEffect(() => {
     if (!user?.name) return;
     setMessages((prev) => {
@@ -392,9 +370,6 @@ function AiChatWidget({ t }) {
     setLoading(true);
 
     try {
-      // Send recent history (excluding the just-added user message, which
-      // goes separately as `message`) so the backend can resolve follow-ups
-      // like "uska price kya hai".
       const history = newMessages.slice(0, -1).slice(-12);
       const res = await fetch(`${BACKEND}/api/chat`, {
         method: "POST",
@@ -735,7 +710,6 @@ function BusinessHealthCard({ health, loading, t }) {
         )}
       </div>
 
-      {/* Core 3: Invested → Revenue → Net Profit */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
         <div style={{ background: `${t.accent}08`, border: `1px solid ${t.border}`, borderRadius: 12, padding: "12px 14px" }}>
           <p style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: t.textMuted, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>Total Invested</p>
@@ -774,7 +748,6 @@ function BusinessHealthCard({ health, loading, t }) {
         </div>
       </div>
 
-      {/* Pending flags — not folded into profit, shown as clear cash-flow alerts */}
       {!loading && (health.supplierPending > 0 || health.customerPending > 0) && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
           {health.supplierPending > 0 && (
@@ -1128,20 +1101,23 @@ export default function Dashboard() {
             </p>
           </div>
 
-          {!error && (
-            <div
-              style={{
-                display: "flex", alignItems: "center", gap: "6px",
-                fontSize: "10.5px", fontWeight: 600, color: t.textMuted,
-                padding: "5px 10px", borderRadius: "99px",
-                background: t.bgCard, border: `1px solid ${t.border}`,
-                fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap",
-              }}
-            >
-              <span className="dash-pulse-dot" style={{ background: loading ? t.orange : t.green }} />
-              {loading ? "Syncing…" : `Updated ${timeAgo(lastUpdated)}`}
-            </div>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {!error && (
+              <div
+                style={{
+                  display: "flex", alignItems: "center", gap: "6px",
+                  fontSize: "10.5px", fontWeight: 600, color: t.textMuted,
+                  padding: "5px 10px", borderRadius: "99px",
+                  background: t.bgCard, border: `1px solid ${t.border}`,
+                  fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap",
+                }}
+              >
+                <span className="dash-pulse-dot" style={{ background: loading ? t.orange : t.green }} />
+                {loading ? "Syncing…" : `Updated ${timeAgo(lastUpdated)}`}
+              </div>
+            )}
+            <InstallAppButton size="sm" />
+          </div>
         </div>
  
         <div className="dash-kpi-grid">

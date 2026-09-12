@@ -27,6 +27,8 @@ import LandingPage from "./pages/Landingpage";
 import SuperAdminLogin from "./pages/SuperAdminLogin";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import Tasks from "../src/pages/Tasks";
+import { registerServiceWorker } from "./registerServiceWorker";
+registerServiceWorker();
 
 // ─── PROTECTED ROUTE WRAPPER ──────────────────────────────────────────────
 function ProtectedRoute({ children }) {

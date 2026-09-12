@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../components/ThemeContext"; // ⬅️ adjust path if needed
+import InstallAppButton from "../components/InstallAppButton";
 
 /* ============================================================================
    LANDING PAGE — matches the existing dashboard's design language:
@@ -1173,6 +1174,7 @@ function LandingNavbar({ navigate }) {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }} className="landing-nav-actions">
+          <InstallAppButton />
           <Button variant="ghost" onClick={goLogin}>Log in</Button>
           <Button variant="primary" onClick={goSignup}>Start Free</Button>
         </div>

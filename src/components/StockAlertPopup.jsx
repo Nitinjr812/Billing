@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "./ThemeContext";
 import { useNotifications } from "./NotificationContext";
-
-const BACKEND = "https://billing-backend-tawny.vercel.app";
+import { useApi } from "../hooks/useApi";
 
 export default function StockAlertPopup() {
   const { t } = useTheme();
   const { scanStock } = useNotifications();
+  const api = useApi();
 
   const [alerts, setAlerts] = useState(null);
   const [dismissed, setDismissed] = useState(false);
@@ -24,8 +24,7 @@ export default function StockAlertPopup() {
 
     (async () => {
       try {
-        const res = await fetch(`${BACKEND}/api/products/alerts`);
-        const data = await res.json();
+        const data = await api("/products/alerts");
         const total =
           (data.outOfStock?.length || 0) +
           (data.lowStock?.length || 0) +
@@ -43,10 +42,7 @@ export default function StockAlertPopup() {
     setSuggestionLoading(true);
     setSuggestion("");
     try {
-      const res = await fetch(`${BACKEND}/api/products/${product._id}/suggestion`, {
-        method: "POST",
-      });
-      const data = await res.json();
+      const data = await api(`/products/${product._id}/suggestion`, { method: "POST" });
       setSuggestion(data.suggestion);
     } catch {
       setSuggestion("Couldn't load a suggestion right now — please try again shortly.");
