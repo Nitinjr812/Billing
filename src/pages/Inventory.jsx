@@ -1,11 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { useTheme } from "../components/ThemeContext";
+import { useApi } from "../hooks/useApi";
 import VoiceAddProduct from "../components/VoiceAddProduct";
 
-const BACKEND = "https://billing-backend-tawny.vercel.app";
 const STATUSES = ["All", "In Stock", "Low Stock", "Out of Stock"];
-// Starter suggestions shown even before any products exist. Once products
-// are added, real categories (ranked by how often they're used) take over.
 const DEFAULT_CATEGORY_SUGGESTIONS = ["Electronics", "Apparel", "Home Goods"];
 
 function getStatus(stock) {
@@ -14,8 +12,6 @@ function getStatus(stock) {
   return "In Stock";
 }
 
-// Build a list of categories sorted by how frequently they're used
-// (most-used first), falling back to the starter suggestions.
 function useCategorySuggestions(products) {
   return useMemo(() => {
     const counts = new Map();
@@ -60,6 +56,7 @@ function StatCard({ label, value, trend, trendDir, sub }) {
 
 // ─── ADD PRODUCT MODAL ─────────────────────────────────────────────────────
 function AddProductModal({ onClose, onAdded, t, existingProducts, categorySuggestions }) {
+  const api = useApi();
   const [form, setForm] = useState({ productId: "", name: "", category: "", stock: "", price: "", growthPercent: "0" });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -81,9 +78,8 @@ function AddProductModal({ onClose, onAdded, t, existingProducts, categorySugges
 
     setSaving(true);
     try {
-      const res = await fetch(`${BACKEND}/api/products`, {
+      await api("/products", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productId: form.productId,
           name: form.name,
@@ -93,8 +89,6 @@ function AddProductModal({ onClose, onAdded, t, existingProducts, categorySugges
           growthPercent: Number(form.growthPercent) || 0,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Product add nahi hua");
       onAdded();
       onClose();
     } catch (e) {
@@ -179,6 +173,7 @@ function AddProductModal({ onClose, onAdded, t, existingProducts, categorySugges
 
 // ─── EDIT PRODUCT MODAL ─────────────────────────────────────────────────────
 function EditProductModal({ product, onClose, onSaved, t, existingProducts, categorySuggestions }) {
+  const api = useApi();
   const [form, setForm] = useState({
     name: product.name,
     category: product.category,
@@ -206,9 +201,8 @@ function EditProductModal({ product, onClose, onSaved, t, existingProducts, cate
 
     setSaving(true);
     try {
-      const res = await fetch(`${BACKEND}/api/products/${product._id}`, {
+      await api(`/products/${product._id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: form.name,
           category: form.category.trim(),
@@ -217,8 +211,6 @@ function EditProductModal({ product, onClose, onSaved, t, existingProducts, cate
           growthPercent: Number(form.growthPercent) || 0,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Product update nahi hua");
       onSaved();
       onClose();
     } catch (e) {
@@ -312,6 +304,7 @@ function EditIcon({ size = 14 }) {
 // ─── INVENTORY PAGE ────────────────────────────────────────────────────────
 export default function Inventory() {
   const { t } = useTheme();
+  const api = useApi();
   const [products, setProducts] = useState(null);
   const [loadErr, setLoadErr] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -323,9 +316,8 @@ export default function Inventory() {
   const [sortDir, setSortDir] = useState("asc");
 
   const loadProducts = () => {
-    fetch(`${BACKEND}/api/products`)
-      .then((res) => res.json())
-      .then(setProducts)
+    api("/products")
+      .then((data) => setProducts(Array.isArray(data) ? data : []))
       .catch((e) => setLoadErr(e.message || "Products load nahi ho paaye"));
   };
 
@@ -343,7 +335,6 @@ export default function Inventory() {
 
   const withStatus = products.map((p) => ({ ...p, status: getStatus(p.stock) }));
 
-  // Categories that actually exist in the data right now, for the filter dropdown.
   const filterCategories = [...new Set(withStatus.map((p) => p.category).filter(Boolean))].sort();
 
   const totalSKUs = withStatus.length;
@@ -384,9 +375,6 @@ export default function Inventory() {
     fontFamily: "'DM Sans', sans-serif", outline: "none",
   };
 
-  // Native <option> elements often ignore the parent <select>'s CSS color
-  // and fall back to system colors (white text on white background in
-  // dark themes). Styling each <option> explicitly fixes this in Chrome/Edge/Firefox.
   const optionStyle = { color: t.textPrimary, background: t.bgCard };
 
   const SortArrow = ({ col }) => {

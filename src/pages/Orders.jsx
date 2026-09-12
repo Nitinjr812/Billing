@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { useApi } from "../hooks/useApi";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -190,15 +191,17 @@ function calcInvoiceTotals({ items, discountType, discountValue, gstRate }) {
 // ─── live orders hook ───────────────────────────────────────────────────
 function useOrdersData(pollMs = 30000) {
   const [state, setState] = useState({ loading: true, error: null, orders: [] });
+  const api = useApi();
+  const { token, loading: authLoading } = useAuth();
 
   useEffect(() => {
+    if (authLoading || !token) return; // wait until the token is actually ready
+
     let cancelled = false;
 
     async function load() {
       try {
-        const res = await fetch(`${BACKEND}/api/orders`);
-        if (!res.ok) throw new Error(`Request failed (${res.status})`);
-        const data = await res.json();
+        const data = await api("/orders");
         if (!cancelled) {
           setState({ loading: false, error: null, orders: Array.isArray(data) ? data : [] });
         }
@@ -215,7 +218,7 @@ function useOrdersData(pollMs = 30000) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [pollMs]);
+  }, [pollMs, token, authLoading]);
 
   return state;
 }
@@ -223,15 +226,17 @@ function useOrdersData(pollMs = 30000) {
 // ─── live invoices hook ─────────────────────────────────────────────────
 function useInvoicesData(pollMs = 30000) {
   const [state, setState] = useState({ loading: true, error: null, invoices: [] });
+  const api = useApi();
+  const { token, loading: authLoading } = useAuth();
 
   useEffect(() => {
+    if (authLoading || !token) return; // wait until the token is actually ready
+
     let cancelled = false;
 
     async function load() {
       try {
-        const res = await fetch(`${BACKEND}/api/invoices`);
-        if (!res.ok) throw new Error(`Request failed (${res.status})`);
-        const data = await res.json();
+        const data = await api("/invoices");
         if (!cancelled) {
           setState({ loading: false, error: null, invoices: Array.isArray(data) ? data : [] });
         }
@@ -248,7 +253,7 @@ function useInvoicesData(pollMs = 30000) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [pollMs]);
+  }, [pollMs, token, authLoading]);
 
   return state;
 }
@@ -718,6 +723,7 @@ function VoicePanel({ listening, unsupported, transcript, setTranscript, onToggl
 // ─── CREATE INVOICE MODAL ──────────────────────────────────────────────────
 function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
   const { token } = useAuth();
+  const api = useApi();
   const [products, setProducts] = useState([]);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -749,12 +755,14 @@ function CreateInvoiceModal({ onClose, onSaved, onToast, t }) {
   const autoParseTimerRef = useRef(null);
   const handleParseRef = useRef(null);
 
+  // Load the product catalog once the token is actually available — this
+  // uses the shared `useApi` helper, which already attaches the auth header.
   useEffect(() => {
-    fetch(`${BACKEND}/api/products`)
-      .then((res) => res.json())
+    if (!token) return;
+    api("/products")
       .then((data) => setProducts(Array.isArray(data) ? data : []))
       .catch(() => setProducts([]));
-  }, []);
+  }, [token]);
 
   // Prefill GST rate + GSTIN from shop's tax settings (owner-configured default).
   // Shopkeeper can still override the rate per-invoice below.

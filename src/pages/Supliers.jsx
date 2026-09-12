@@ -146,6 +146,7 @@ function Icon({ id, size = 14 }) {
     pin: <><path d="M12 21s-6.5-5.9-6.5-11a6.5 6.5 0 0 1 13 0c0 5.1-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.2" /></>,
     rupee: <><path d="M6 4h12M6 4c4 0 7 1.6 7 4.5S10 13 6 13h9M6 13l7 7" /></>,
     receipt: <><path d="M6 3h12v18l-2.5-1.6L13 21l-2.5-1.6L8 21l-2-1.6z" /><path d="M9 8h6M9 12h6" /></>,
+    whatsapp: <><path d="M6.5 17.5L5 21l3.6-1.4a8 8 0 1 0-2.6-2.5z" /><path d="M9 10.3c0 3.2 2.8 6 6 6 .6 0 .9-.6.6-1.1l-1-1.6a.8.8 0 0 0-1-.3l-1 .4a5 5 0 0 1-2.3-2.3l.4-1a.8.8 0 0 0-.3-1l-1.6-1c-.5-.3-1.1 0-1.1.6" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -335,6 +336,223 @@ function CategoryBadge({ category, t }) {
             {category}
         </span>
     );
+}
+
+// ─── WHATSAPP RESTOCK HELPERS ──────────────────────────────────────────
+// Turns whatever the shopkeeper typed (with spaces, dashes, +91, a
+// leading 0, etc.) into the plain digit string wa.me needs.
+// Assumes India (91) when a bare 10-digit number is given.
+function toWhatsAppDigits(raw) {
+  let digits = (raw || "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length === 10) digits = "91" + digits;
+  else if (digits.length === 11 && digits.startsWith("0")) digits = "91" + digits.slice(1);
+  else if (digits.length === 12 && digits.startsWith("91")) {/* already fine */}
+  return digits.length >= 11 ? digits : null;
+}
+
+function buildRestockMessage(supplierLabel, items) {
+  const lines = items
+    .filter((it) => it.name.trim())
+    .map((it, i) => `${i + 1}. ${it.name.trim()}${it.qty ? ` – ${it.qty}${it.unit ? " " + it.unit : ""}` : ""}`);
+  return [
+    `Namaste${supplierLabel ? " " + supplierLabel : ""},`,
+    ``,
+    `Kripya niche diye gaye items ka restock bhej dijiye:`,
+    ``,
+    ...lines,
+    ``,
+    `Dhanyavaad!`,
+  ].join("\n");
+}
+
+// ─── RESTOCK ALERT MODAL — builds a WhatsApp message and hands off to
+// wa.me. No API, no cost: it just opens WhatsApp with the text already
+// typed in, and the shopkeeper taps Send themselves. Works for a
+// supplier already saved in the system, or any ad-hoc number.
+function RestockAlertModal({ supplier, onClose, onToast, t }) {
+  const [name, setName] = useState(supplier?.name || "");
+  const [phone, setPhone] = useState(supplier?.phone || "");
+  const [items, setItems] = useState([{ id: "0", name: "", qty: "", unit: "" }]);
+  const [message, setMessage] = useState("");
+  const [err, setErr] = useState("");
+
+  const inputStyle = {
+    width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
+    border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 12px",
+    fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", outline: "none",
+    "--focus-ring": `${t.accent}33`,
+  };
+  const labelStyle = { fontSize: 11, color: t.textMuted, display: "block", marginBottom: 4 };
+
+  const updateItem = (id, field, value) => {
+    setItems((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+  };
+  const addItem = () => {
+    setItems((rows) => [...rows, { id: String(Date.now()), name: "", qty: "", unit: "" }]);
+  };
+  const removeItem = (id) => {
+    setItems((rows) => (rows.length > 1 ? rows.filter((r) => r.id !== id) : rows));
+  };
+
+  const handleGenerate = () => {
+    setErr("");
+    if (!items.some((it) => it.name.trim())) return setErr("Kam se kam ek item ka naam daaliye");
+    setMessage(buildRestockMessage(name, items));
+  };
+
+  const handleSend = () => {
+    setErr("");
+    const digits = toWhatsAppDigits(phone);
+    if (!digits) return setErr("Valid WhatsApp number daaliye (10 digit ya +91 ke saath)");
+    const finalMessage = message || buildRestockMessage(name, items);
+    if (!finalMessage.trim()) return setErr("Message khaali hai — items daal ke pehle Generate kariye");
+    const url = `https://wa.me/${digits}?text=${encodeURIComponent(finalMessage)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    onToast?.("✅ WhatsApp khul gaya — bas Send dabaiye!");
+    onClose();
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1150, padding: 16,
+      overflowY: "auto",
+    }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16,
+        padding: 24, width: "100%", maxWidth: 460, display: "flex", flexDirection: "column",
+        gap: 14, maxHeight: "90vh", overflowY: "auto",
+        animation: "modalIn 0.2s ease",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: t.green, display: "flex" }}><Icon id="whatsapp" size={18} /></span>
+            <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 19, color: t.textPrimary, margin: 0 }}>
+              Send Restock Alert
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              width: 30, height: 30, borderRadius: 8, background: `${t.accent}12`,
+              border: `1px solid ${t.border}`, color: t.textMuted, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}
+          ><Icon id="close" size={13} /></button>
+        </div>
+
+        {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>{err}</p>}
+
+        {/* Supplier identity — locked if this came from a saved supplier,
+            editable if it's an ad-hoc/one-off number not in the system */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Supplier Name</label>
+            <input
+              className="ui-input" style={inputStyle} value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. TechSource India"
+              disabled={!!supplier}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>WhatsApp Number *</label>
+            <input
+              className="ui-input" style={inputStyle} value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="10-digit or +91…"
+            />
+          </div>
+        </div>
+        {!supplier && (
+          <p style={{ fontSize: 11, color: t.textMuted, margin: 0 }}>
+            Ye supplier tere system mein saved nahi hai — bas number daal, msg chala jaayega.
+          </p>
+        )}
+
+        {/* Items list */}
+        <div>
+          <label style={labelStyle}>Restock Items</label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {items.map((it) => (
+              <div key={it.id} style={{ display: "flex", gap: 6 }}>
+                <input
+                  className="ui-input" style={{ ...inputStyle, flex: 3 }}
+                  value={it.name} onChange={(e) => updateItem(it.id, "name", e.target.value)}
+                  placeholder="Product name"
+                />
+                <input
+                  className="ui-input" style={{ ...inputStyle, flex: 1 }}
+                  value={it.qty} onChange={(e) => updateItem(it.id, "qty", e.target.value)}
+                  placeholder="Qty"
+                />
+                <input
+                  className="ui-input" style={{ ...inputStyle, flex: 1 }}
+                  value={it.unit} onChange={(e) => updateItem(it.id, "unit", e.target.value)}
+                  placeholder="Unit"
+                />
+                <button
+                  onClick={() => removeItem(it.id)}
+                  aria-label="Remove item"
+                  style={{
+                    width: 34, height: 34, flexShrink: 0, borderRadius: 8,
+                    background: `${t.red}12`, border: `1px solid ${t.red}30`,
+                    color: t.red, cursor: "pointer", display: "flex",
+                    alignItems: "center", justifyContent: "center",
+                  }}
+                ><Icon id="close" size={12} /></button>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={addItem}
+            style={{
+              marginTop: 8, display: "flex", alignItems: "center", gap: 4,
+              fontSize: "11px", fontWeight: 700, color: t.accent,
+              background: `${t.accent}12`, border: `1px solid ${t.accent}30`,
+              borderRadius: 8, padding: "6px 10px", cursor: "pointer",
+            }}
+          ><Icon id="plus" size={11} /> Add Item</button>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGenerate}
+          style={{
+            fontSize: 12, fontWeight: 700, color: t.textPrimary,
+            background: `${t.accent}10`, border: `1px solid ${t.border}`,
+            borderRadius: 10, padding: "9px 12px", cursor: "pointer",
+          }}
+        >Generate Message</button>
+
+        <div>
+          <label style={labelStyle}>Message Preview (editable)</label>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Generate Message dabaiye, ya seedha yahin type kariye…"
+            rows={7}
+            style={{ ...inputStyle, resize: "vertical", fontFamily: "'DM Sans', sans-serif", lineHeight: 1.5 }}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+          <button onClick={onClose} style={{
+            background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
+            borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}>Cancel</button>
+          <button onClick={handleSend} style={{
+            background: t.green, color: "#fff", border: "none", borderRadius: 10,
+            padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 6,
+          }}><Icon id="whatsapp" size={14} /> Open WhatsApp & Send</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── ADD / EDIT SUPPLIER MODAL ─────────────────────────────────────────────
@@ -1007,6 +1225,7 @@ function KhataSection({ supplier, onToast, t }) {
 // ─── SUPPLIER DETAIL DRAWER ───────────────────────────────────────────────────
 function SupplierDrawer({ supplier, onClose, onEdit, onDeleted, onToast, t }) {
     const [deleting, setDeleting] = useState(false);
+    const [showRestock, setShowRestock] = useState(false);
     if (!supplier) return null;
 
     const handleDelete = async () => {
@@ -1060,6 +1279,15 @@ function SupplierDrawer({ supplier, onClose, onEdit, onDeleted, onToast, t }) {
                     animation: "drawerIn 0.22s ease",
                 }}
             >
+                {showRestock && (
+                  <RestockAlertModal
+                    supplier={supplier}
+                    onClose={() => setShowRestock(false)}
+                    onToast={onToast}
+                    t={t}
+                  />
+                )}
+
                 {/* Header */}
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
                     <div style={{ display: "flex", gap: 14, minWidth: 0 }}>
@@ -1099,6 +1327,25 @@ function SupplierDrawer({ supplier, onClose, onEdit, onDeleted, onToast, t }) {
                         <Icon id="close" size={15} />
                     </button>
                 </div>
+
+                {/* Restock action — pinned near the top since it's the most
+                    frequent thing an owner will do from this drawer */}
+                <button
+                    onClick={() => setShowRestock(true)}
+                    disabled={!supplier.phone}
+                    title={!supplier.phone ? "Is supplier ka phone number nahi hai — Edit se add karein" : undefined}
+                    style={{
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                        padding: "12px 10px", borderRadius: "10px",
+                        background: supplier.phone ? t.green : `${t.border}`,
+                        color: supplier.phone ? "#fff" : t.textMuted,
+                        border: "none",
+                        fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
+                        cursor: supplier.phone ? "pointer" : "not-allowed",
+                        touchAction: "manipulation",
+                    }}>
+                    <Icon id="whatsapp" size={15} /> Send Restock Alert on WhatsApp
+                </button>
 
                 {/* Stats row — investment + pending now lead here, ahead of raw stock value */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
@@ -1557,6 +1804,7 @@ export default function Suppliers() {
     const [showForm, setShowForm] = useState(false);
     const [editTarget, setEditTarget] = useState(null);
     const [toast, setToast] = useState("");
+    const [showAdHocRestock, setShowAdHocRestock] = useState(false);
 
     const filtered = suppliers.filter((s) => {
         const matchSearch =
@@ -1612,6 +1860,14 @@ export default function Suppliers() {
                 t={t}
               />
             )}
+            {showAdHocRestock && (
+              <RestockAlertModal
+                supplier={null}
+                onClose={() => setShowAdHocRestock(false)}
+                onToast={setToast}
+                t={t}
+              />
+            )}
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
@@ -1634,17 +1890,30 @@ export default function Suppliers() {
                             {error ? error : "Manage your vendor relationships"}
                         </p>
                     </div>
-                    <button
-                        onClick={() => { setEditTarget(null); setShowForm(true); }}
-                        style={{
-                          padding: "10px 18px", borderRadius: "10px",
-                          background: t.accent, color: "#fff", border: "none",
-                          fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
-                          cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
-                          touchAction: "manipulation", whiteSpace: "nowrap",
-                        }}>
-                        <Icon id="plus" size={14} /> Add Supplier
-                    </button>
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                        <button
+                            onClick={() => setShowAdHocRestock(true)}
+                            style={{
+                              padding: "10px 18px", borderRadius: "10px",
+                              background: t.green, color: "#fff", border: "none",
+                              fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
+                              cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
+                              touchAction: "manipulation", whiteSpace: "nowrap",
+                            }}>
+                            <Icon id="whatsapp" size={14} /> Restock Alert
+                        </button>
+                        <button
+                            onClick={() => { setEditTarget(null); setShowForm(true); }}
+                            style={{
+                              padding: "10px 18px", borderRadius: "10px",
+                              background: t.accent, color: "#fff", border: "none",
+                              fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
+                              cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
+                              touchAction: "manipulation", whiteSpace: "nowrap",
+                            }}>
+                            <Icon id="plus" size={14} /> Add Supplier
+                        </button>
+                    </div>
                 </div>
 
                 {/* KPI Row */}

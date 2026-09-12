@@ -203,7 +203,10 @@ function computeBusinessHealth(orders, purchaseSummary) {
 }
 
 // ─── live data hook (single source of truth for the whole dashboard) ──────
-function useDashboardData(pollMs = 60000) {
+// NOTE: now requires `token` — waits for auth to be ready, and sends
+// Authorization on every request. This is what was missing before and
+// causing the 401s on /orders, /orders/stats, /products, /products/alerts.
+function useDashboardData(token, authLoading, pollMs = 60000) {
   const [state, setState] = useState({
     loading: true,
     error: null,
@@ -216,16 +219,22 @@ function useDashboardData(pollMs = 60000) {
   });
 
   useEffect(() => {
+    // Wait until AuthContext has actually finished restoring the token from
+    // localStorage. Firing requests before that sends "Bearer undefined"
+    // and the backend correctly rejects it with 401.
+    if (authLoading || !token) return;
+
     let cancelled = false;
+    const authHeaders = { Authorization: `Bearer ${token}` };
 
     async function load() {
       try {
         const [ordersRes, statsRes, productsRes, alertsRes, purchaseSummaryRes] = await Promise.all([
-          fetch(`${BACKEND}/api/orders`),
-          fetch(`${BACKEND}/api/orders/stats`),
-          fetch(`${BACKEND}/api/products`),
-          fetch(`${BACKEND}/api/products/alerts`),
-          fetch(`${BACKEND}/api/supplier-purchases/summary`),
+          fetch(`${BACKEND}/api/orders`, { headers: authHeaders }),
+          fetch(`${BACKEND}/api/orders/stats`, { headers: authHeaders }),
+          fetch(`${BACKEND}/api/products`, { headers: authHeaders }),
+          fetch(`${BACKEND}/api/products/alerts`, { headers: authHeaders }),
+          fetch(`${BACKEND}/api/supplier-purchases/summary`, { headers: authHeaders }),
         ]);
 
         if (!ordersRes.ok || !statsRes.ok || !productsRes.ok || !alertsRes.ok) {
@@ -276,19 +285,20 @@ function useDashboardData(pollMs = 60000) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [pollMs]);
+  }, [pollMs, token, authLoading]);
 
   return state;
 }
 
-// ─── AI CHAT WIDGET CONTEXT (unchanged logic) ─────────────────────────────
-async function fetchLiveDashboardContext() {
+// ─── AI CHAT WIDGET CONTEXT (unchanged logic, now sends auth header) ──────
+async function fetchLiveDashboardContext(token) {
   try {
+    const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
     const [statsRes, productsRes, alertsRes, ordersRes] = await Promise.all([
-      fetch(`${BACKEND}/api/orders/stats`),
-      fetch(`${BACKEND}/api/products`),
-      fetch(`${BACKEND}/api/products/alerts`),
-      fetch(`${BACKEND}/api/orders`),
+      fetch(`${BACKEND}/api/orders/stats`, { headers: authHeaders }),
+      fetch(`${BACKEND}/api/products`, { headers: authHeaders }),
+      fetch(`${BACKEND}/api/products/alerts`, { headers: authHeaders }),
+      fetch(`${BACKEND}/api/orders`, { headers: authHeaders }),
     ]);
 
     const stats = await statsRes.json();
@@ -346,7 +356,7 @@ Let the user know data may not be real-time, but assist with general business qu
 }
 
 function AiChatWidget({ t }) {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [messages, setMessages] = useState(() => [
     { role: "assistant", text: getGreeting(user?.name) },
   ]);
@@ -388,7 +398,10 @@ function AiChatWidget({ t }) {
       const history = newMessages.slice(0, -1).slice(-12);
       const res = await fetch(`${BACKEND}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ message: userText, history }),
       });
 
@@ -1083,7 +1096,8 @@ const styles = `
 // ─── DASHBOARD PAGE ─────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { t } = useTheme();
-  const { loading, error, stats, products, orders, purchaseSummary, lastUpdated } = useDashboardData();
+  const { token, loading: authLoading } = useAuth();
+  const { loading, error, stats, products, orders, purchaseSummary, lastUpdated } = useDashboardData(token, authLoading);
   const [, forceTick] = useState(0);
 
   // re-render every 30s so "X ago" stays fresh
