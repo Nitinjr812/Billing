@@ -27,6 +27,7 @@ import LandingPage from "./pages/Landingpage";
 import SuperAdminLogin from "./pages/SuperAdminLogin";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import Tasks from "../src/pages/Tasks";
+import SplashScreen from "./components/SplashScreen";
 import { registerServiceWorker } from "./registerServiceWorker";
 registerServiceWorker();
 
@@ -73,6 +74,7 @@ function useNavGuard() {
 
 // ─── INNER APP ────────────────────────────────────────────────────────────────
 function AppInner() {
+  const [showSplash, setShowSplash] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t } = useTheme();
 
@@ -88,6 +90,7 @@ function AppInner() {
 
   return (
     <>
+    {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       <GlobalScrollbar />
       <Routes>
         <Route path="/" element={<RootRoute />} />
