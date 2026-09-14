@@ -135,7 +135,6 @@ function levenshtein(a, b) {
   }
   return dp[m][n];
 }
-
 // Returns the matching product object, or null if nothing close enough is found.
 function findBestProductMatch(rawName, products) {
   if (!rawName || !products?.length) return null;
@@ -146,14 +145,35 @@ function findBestProductMatch(rawName, products) {
   const exact = products.find((p) => normalizeStr(p.name) === target);
   if (exact) return exact;
 
-  // 2) fuzzy match — allow a small edit distance relative to name length,
-  //    to catch minor mis-hearings/typos beyond just spacing
+  // 2) containment match — handles extra/missing words, like
+  //    "buttermilk milk" containing "buttermilk", or someone typing just
+  //    "milk" when the catalog item is "Full Cream Milk". Only trust this
+  //    when the shorter name is reasonably long (avoids "milk" matching
+  //    everything that happens to contain those 4 letters).
+  let bestContainment = null;
+  let bestContainmentLen = 0;
+  for (const p of products) {
+    const pName = normalizeStr(p.name);
+    if (pName.length < 4) continue; // too short to safely use as a substring anchor
+    const isContained = target.includes(pName) || pName.includes(target);
+    if (isContained) {
+      const overlapLen = Math.min(pName.length, target.length);
+      if (overlapLen > bestContainmentLen) {
+        bestContainment = p;
+        bestContainmentLen = overlapLen;
+      }
+    }
+  }
+  if (bestContainment) return bestContainment;
+
+  // 3) fuzzy match — allow a slightly larger edit distance relative to name
+  //    length, to catch typos and minor mis-hearings beyond just spacing.
   let best = null;
   let bestDist = Infinity;
   for (const p of products) {
     const pName = normalizeStr(p.name);
     const dist = levenshtein(target, pName);
-    const threshold = Math.max(1, Math.floor(Math.max(target.length, pName.length) * 0.25));
+    const threshold = Math.max(2, Math.floor(Math.max(target.length, pName.length) * 0.35));
     if (dist <= threshold && dist < bestDist) {
       best = p;
       bestDist = dist;
