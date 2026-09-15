@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTheme } from "../components/ThemeContext";
+import { useApi } from "../hooks/useApi";
 
 const BACKEND = "https://billing-backend-tawny.vercel.app";
 
@@ -57,7 +58,11 @@ function enrichWithKhata(suppliers, purchaseSummaryPerSupplier) {
 
 // ─── live suppliers hook (now also pulls purchase/khata summary) ───────
 function useSuppliersData(pollMs = 60000) {
-  const [state, setState] = useState({ loading: true, error: null, suppliers: [] });
+  const api = useApi();
+  const apiRef = useRef(api);
+  apiRef.current = api;
+
+  const [state, setState] = useState({ loading: true, error: null, suppliers: [], products: [] });
   const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
@@ -65,35 +70,30 @@ function useSuppliersData(pollMs = 60000) {
 
     async function load() {
       try {
-        const [supRes, prodRes, purchaseSummaryRes] = await Promise.all([
-          fetch(`${BACKEND}/api/suppliers`),
-          fetch(`${BACKEND}/api/products`),
-          fetch(`${BACKEND}/api/supplier-purchases/summary`),
+        const [suppliers, products] = await Promise.all([
+          apiRef.current("/suppliers"),
+          apiRef.current("/products"),
         ]);
-        if (!supRes.ok || !prodRes.ok) throw new Error("Request failed");
-        const [suppliers, products] = await Promise.all([supRes.json(), prodRes.json()]);
 
-        // Purchase summary is optional — don't break the page if it 404s
         let purchaseSummary = { perSupplier: [], overall: { totalPurchased: 0, totalPaid: 0, totalPending: 0 } };
-        if (purchaseSummaryRes.ok) {
-          purchaseSummary = await purchaseSummaryRes.json();
-        }
+        try {
+          purchaseSummary = await apiRef.current("/supplier-purchases/summary");
+        } catch { /* ignore */ }
 
         if (!cancelled) {
-          const merged = enrichSuppliers(
-            Array.isArray(suppliers) ? suppliers : [],
-            Array.isArray(products) ? products : []
-          );
+          const rawProducts = Array.isArray(products) ? products : [];
+          const merged = enrichSuppliers(Array.isArray(suppliers) ? suppliers : [], rawProducts);
           const withKhata = enrichWithKhata(merged, purchaseSummary.perSupplier || []);
           setState({
             loading: false,
             error: null,
             suppliers: withKhata,
+            products: rawProducts,          // 👈 naya
             overallKhata: purchaseSummary.overall || { totalPurchased: 0, totalPaid: 0, totalPending: 0 },
           });
         }
       } catch (err) {
-        if (!cancelled) setState((s) => ({ ...s, loading: false, error: "Live supplier data unavailable right now." }));
+        if (!cancelled) setState((s) => ({ ...s, loading: false, error: err.message }));
       }
     }
 
@@ -107,6 +107,10 @@ function useSuppliersData(pollMs = 60000) {
 
 // ─── purchases-for-one-supplier hook (used inside the drawer) ─────────
 function useSupplierPurchases(supplierId) {
+  const api = useApi();
+  const apiRef = useRef(api);
+  apiRef.current = api;
+
   const [state, setState] = useState({ loading: true, error: null, purchases: [] });
   const [tick, setTick] = useState(0);
 
@@ -117,18 +121,48 @@ function useSupplierPurchases(supplierId) {
     async function load() {
       setState((s) => ({ ...s, loading: true }));
       try {
-        const res = await fetch(`${BACKEND}/api/supplier-purchases?supplier=${supplierId}`);
-        if (!res.ok) throw new Error("Request failed");
-        const data = await res.json();
+        const data = await apiRef.current(`/supplier-purchases?supplier=${supplierId}`);
         if (!cancelled) setState({ loading: false, error: null, purchases: Array.isArray(data) ? data : [] });
       } catch (err) {
-        if (!cancelled) setState({ loading: false, error: "Could not load purchase history", purchases: [] });
+        if (!cancelled) setState({ loading: false, error: err.message, purchases: [] });
       }
     }
 
     load();
     return () => { cancelled = true; };
   }, [supplierId, tick]);
+
+  return { ...state, refresh: () => setTick((n) => n + 1) };
+}
+
+// ─── restock orders hook — the WhatsApp restock requests, tracked so they
+// can be marked "Complete" and pushed into inventory as real stock. Pulls
+// ALL orders (any supplier, incl. ad-hoc ones with no saved supplier) so
+// they can be shown in one "Pending Restocks" list on the main page.
+function useRestockOrders(pollMs = 30000) {
+  const api = useApi();
+  const apiRef = useRef(api);
+  apiRef.current = api;
+
+  const [state, setState] = useState({ loading: true, error: null, orders: [] });
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const data = await apiRef.current("/restock-orders");
+        if (!cancelled) setState({ loading: false, error: null, orders: Array.isArray(data) ? data : [] });
+      } catch (err) {
+        if (!cancelled) setState((s) => ({ ...s, loading: false, error: err.message }));
+      }
+    }
+
+    load();
+    const interval = setInterval(load, pollMs);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [pollMs, tick]);
 
   return { ...state, refresh: () => setTick((n) => n + 1) };
 }
@@ -147,6 +181,9 @@ function Icon({ id, size = 14 }) {
     rupee: <><path d="M6 4h12M6 4c4 0 7 1.6 7 4.5S10 13 6 13h9M6 13l7 7" /></>,
     receipt: <><path d="M6 3h12v18l-2.5-1.6L13 21l-2.5-1.6L8 21l-2-1.6z" /><path d="M9 8h6M9 12h6" /></>,
     whatsapp: <><path d="M6.5 17.5L5 21l3.6-1.4a8 8 0 1 0-2.6-2.5z" /><path d="M9 10.3c0 3.2 2.8 6 6 6 .6 0 .9-.6.6-1.1l-1-1.6a.8.8 0 0 0-1-.3l-1 .4a5 5 0 0 1-2.3-2.3l.4-1a.8.8 0 0 0-.3-1l-1.6-1c-.5-.3-1.1 0-1.1.6" /></>,
+    box: <><path d="M3.5 7.5L12 3l8.5 4.5L12 12 3.5 7.5z" /><path d="M3.5 7.5V16l8.5 4.5m0-8.5V21m0-8.5l8.5-4.5V16L12 20.5" /></>,
+    check: <><path d="M20 6L9 17l-5-5" /></>,
+    history: <><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /><path d="M12 8v5l3 2" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -198,7 +235,7 @@ function Toast({ message, onDismiss, t }) {
 
   if (!message) return null;
   const isError = message.startsWith("❌");
-  const text = message.replace(/^✅\s*|^❌\s*/, "");
+  const text = message.replace(/^✅\s*|^❌\s*|^⚠️\s*/, "");
 
   return (
     <div style={{
@@ -242,100 +279,119 @@ function SkeletonCircle({ size = 36, t, style = {} }) {
 
 // ─── HELPERS (badges) ──────────────────────────────────────────────────────────
 function StarRating({ rating, t }) {
-    return (
-        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-            {[1, 2, 3, 4, 5].map((s) => (
-                <span
-                    key={s}
-                    style={{
-                        fontSize: "11px",
-                        color: s <= Math.round(rating) ? "#f59e0b" : t.border,
-                    }}
-                >
-                    ★
-                </span>
-            ))}
-            <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "2px" }}>
-                {rating || 0}
-            </span>
-        </div>
-    );
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+      {[1, 2, 3, 4, 5].map((s) => (
+        <span
+          key={s}
+          style={{
+            fontSize: "11px",
+            color: s <= Math.round(rating) ? "#f59e0b" : t.border,
+          }}
+        >
+          ★
+        </span>
+      ))}
+      <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "2px" }}>
+        {rating || 0}
+      </span>
+    </div>
+  );
 }
 
 function StatusBadge({ status, t }) {
-    const map = {
-        Active: { color: t.green, bg: t.greenBg },
-        "On Hold": { color: t.orange, bg: t.orangeBg },
-        Inactive: { color: t.red, bg: t.redBg },
-    };
-    const s = map[status] || map["Active"];
-    return (
-        <span
-            style={{
-                fontSize: "10px",
-                fontWeight: 600,
-                padding: "3px 9px",
-                borderRadius: "99px",
-                color: s.color,
-                background: s.bg,
-                whiteSpace: "nowrap",
-                display: "inline-block",
-            }}
-        >
-            {status}
-        </span>
-    );
+  const map = {
+    Active: { color: t.green, bg: t.greenBg },
+    "On Hold": { color: t.orange, bg: t.orangeBg },
+    Inactive: { color: t.red, bg: t.redBg },
+  };
+  const s = map[status] || map["Active"];
+  return (
+    <span
+      style={{
+        fontSize: "10px",
+        fontWeight: 600,
+        padding: "3px 9px",
+        borderRadius: "99px",
+        color: s.color,
+        background: s.bg,
+        whiteSpace: "nowrap",
+        display: "inline-block",
+      }}
+    >
+      {status}
+    </span>
+  );
 }
 
 // Purchase (khata) status badge — Paid / Partially Paid / Pending
 function PurchaseStatusBadge({ status, t }) {
-    const map = {
-        Paid: { color: t.green, bg: t.greenBg },
-        "Partially Paid": { color: t.orange, bg: t.orangeBg },
-        Pending: { color: t.red, bg: t.redBg },
-    };
-    const s = map[status] || map["Pending"];
-    return (
-        <span
-            style={{
-                fontSize: "10px",
-                fontWeight: 600,
-                padding: "3px 9px",
-                borderRadius: "99px",
-                color: s.color,
-                background: s.bg,
-                whiteSpace: "nowrap",
-                display: "inline-block",
-            }}
-        >
-            {status}
-        </span>
-    );
+  const map = {
+    Paid: { color: t.green, bg: t.greenBg },
+    "Partially Paid": { color: t.orange, bg: t.orangeBg },
+    Pending: { color: t.red, bg: t.redBg },
+  };
+  const s = map[status] || map["Pending"];
+  return (
+    <span
+      style={{
+        fontSize: "10px",
+        fontWeight: 600,
+        padding: "3px 9px",
+        borderRadius: "99px",
+        color: s.color,
+        background: s.bg,
+        whiteSpace: "nowrap",
+        display: "inline-block",
+      }}
+    >
+      {status}
+    </span>
+  );
+}
+
+// Restock order status badge — Pending / Completed
+function RestockStatusBadge({ status, t }) {
+  const map = {
+    Pending: { color: t.orange, bg: t.orangeBg },
+    Completed: { color: t.green, bg: t.greenBg },
+  };
+  const s = map[status] || map["Pending"];
+  return (
+    <span
+      style={{
+        fontSize: "10px", fontWeight: 600, padding: "3px 9px", borderRadius: "99px",
+        color: s.color, background: s.bg, whiteSpace: "nowrap", display: "inline-block",
+      }}
+    >
+      {status}
+    </span>
+  );
 }
 
 function CategoryBadge({ category, t }) {
-    const map = {
-        Electronics: { color: t.blue, bg: `${t.blue}18` },
-        Apparel: { color: "#a855f7", bg: "#a855f718" },
-        "Home Goods": { color: t.orange, bg: t.orangeBg },
-    };
-    const s = map[category] || { color: t.accent, bg: `${t.accent}15` };
-    return (
-        <span
-            style={{
-                fontSize: "10px",
-                fontWeight: 600,
-                padding: "3px 9px",
-                borderRadius: "99px",
-                color: s.color,
-                background: s.bg,
-                whiteSpace: "nowrap",
-                display: "inline-block",
-            }}
-        >
-            {category}
-        </span>
-    );
+  const map = {
+    Electronics: { color: t.blue, bg: `${t.blue}18` },
+    Apparel: { color: "#a855f7", bg: "#a855f718" },
+    "Home Goods": { color: t.orange, bg: t.orangeBg },
+  };
+  const s = map[category] || { color: t.accent, bg: `${t.accent}15` };
+  return (
+    <span
+      style={{
+        fontSize: "10px",
+        fontWeight: 600,
+        padding: "3px 9px",
+        borderRadius: "99px",
+        color: s.color,
+        background: s.bg,
+        whiteSpace: "nowrap",
+        display: "inline-block",
+      }}
+    >
+      {category}
+    </span>
+  );
 }
 
 // ─── WHATSAPP RESTOCK HELPERS ──────────────────────────────────────────
@@ -347,14 +403,14 @@ function toWhatsAppDigits(raw) {
   if (!digits) return null;
   if (digits.length === 10) digits = "91" + digits;
   else if (digits.length === 11 && digits.startsWith("0")) digits = "91" + digits.slice(1);
-  else if (digits.length === 12 && digits.startsWith("91")) {/* already fine */}
+  else if (digits.length === 12 && digits.startsWith("91")) {/* already fine */ }
   return digits.length >= 11 ? digits : null;
 }
 
 function buildRestockMessage(supplierLabel, items) {
   const lines = items
     .filter((it) => it.name.trim())
-    .map((it, i) => `${i + 1}. ${it.name.trim()}${it.qty ? ` – ${it.qty}${it.unit ? " " + it.unit : ""}` : ""}`);
+    .map((it, i) => `${i + 1}. ${it.name.trim()}${it.qty ? ` – ${it.qty}` : ""}`);
   return [
     `Namaste${supplierLabel ? " " + supplierLabel : ""},`,
     ``,
@@ -366,16 +422,118 @@ function buildRestockMessage(supplierLabel, items) {
   ].join("\n");
 }
 
+// ─── RESTOCK HISTORY — past WhatsApp restock orders for this supplier,
+// with a one-click "Reorder" that copies the old item list straight into
+// the form above so the shopkeeper doesn't have to retype everything.
+function RestockHistory({ historyOrders, onReorder, t }) {
+  const [open, setOpen] = useState(false);
+  if (!historyOrders.length) return null;
+
+  return (
+    <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "10px 12px", background: `${t.accent}08`, border: "none", cursor: "pointer",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: t.textPrimary }}>
+          <Icon id="history" size={13} /> Previous Restocks ({historyOrders.length})
+        </span>
+        <span style={{ color: t.textMuted, fontSize: 11 }}>{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, maxHeight: 220, overflowY: "auto" }}>
+          {historyOrders.map((order) => (
+            <div key={order._id} style={{
+              border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px",
+              display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8,
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, color: t.textMuted }}>{formatDate(order.createdAt)}</span>
+                  <RestockStatusBadge status={order.status || "Pending"} t={t} />
+                </div>
+                <p style={{ fontSize: 11, color: t.textPrimary, margin: "4px 0 0" }}>
+                  {(order.items || []).map((it) => `${it.name}${it.qty ? ` (${it.qty})` : ""}`).join(", ")}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onReorder(order)}
+                style={{
+                  flexShrink: 0, fontSize: 10, fontWeight: 700, color: t.accent,
+                  background: `${t.accent}12`, border: `1px solid ${t.accent}30`,
+                  borderRadius: 7, padding: "6px 10px", cursor: "pointer", whiteSpace: "nowrap",
+                }}
+              >Reorder this</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── RESTOCK ALERT MODAL — builds a WhatsApp message and hands off to
-// wa.me. No API, no cost: it just opens WhatsApp with the text already
-// typed in, and the shopkeeper taps Send themselves. Works for a
-// supplier already saved in the system, or any ad-hoc number.
-function RestockAlertModal({ supplier, onClose, onToast, t }) {
+// wa.me, AND saves a restock order on the backend (status "Pending") so
+// it shows up in the "Pending Restocks" list and can be marked Complete
+// later — that's what actually pushes the items into inventory as stock.
+// No API, no cost for the WhatsApp part: it just opens WhatsApp with the
+// text already typed in, and the shopkeeper taps Send themselves.
+function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders = [], onClose, onToast, onOrderSaved, t }) {
+  const api = useApi();
+  const [pickedSupplierId, setPickedSupplierId] = useState("");
+  const [supplierQuery, setSupplierQuery] = useState("");
   const [name, setName] = useState(supplier?.name || "");
   const [phone, setPhone] = useState(supplier?.phone || "");
-  const [items, setItems] = useState([{ id: "0", name: "", qty: "", unit: "" }]);
+  const [items, setItems] = useState([{ id: "0", name: "", qty: "" }]);
   const [message, setMessage] = useState("");
   const [err, setErr] = useState("");
+  const [sending, setSending] = useState(false);
+
+  // ad-hoc mode mein jo supplier dropdown se pick hua
+  const pickedSupplier = suppliers.find((s) => s._id === pickedSupplierId) || null;
+  // saving ke liye effective supplier — drawer se aaya ho ya dropdown se pick kiya ho
+  const effectiveSupplier = supplier || pickedSupplier;
+
+  const handlePickSupplier = (sup) => {
+    setPickedSupplierId(sup._id);
+    setSupplierQuery(sup.name);
+    setName(sup.name);
+    setPhone(sup.phone || "");
+  };
+
+  // matching suppliers as the shopkeeper types — real autocomplete instead
+  // of scrolling one long dropdown
+  const matchingSuppliers = !supplier && supplierQuery.trim() && !pickedSupplier
+    ? suppliers.filter((s) => s.name.toLowerCase().includes(supplierQuery.trim().toLowerCase())).slice(0, 6)
+    : [];
+
+  // is supplier ke products ke naam — item input mein suggest karne ke liye.
+  // Ad-hoc / no supplier chuna ho toh saare products suggest karo.
+  const supplierProductNames = [...new Set(
+    products
+      .filter((p) => !effectiveSupplier || (p.supplier || "").toLowerCase() === effectiveSupplier.name.toLowerCase())
+      .map((p) => p.name)
+      .filter(Boolean)
+  )];
+
+  // is supplier ke purane restock orders — reorder ke liye
+  const historyOrders = effectiveSupplier
+    ? allOrders
+        .filter((o) => (o.supplier === effectiveSupplier._id) || ((o.supplierName || "").toLowerCase() === effectiveSupplier.name.toLowerCase()))
+        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    : [];
+
+  const handleReorder = (order) => {
+    const cloned = (order.items || []).map((it, i) => ({ id: `${Date.now()}-${i}`, name: it.name || "", qty: it.qty || "" }));
+    setItems(cloned.length ? [...cloned, { id: `${Date.now()}-new`, name: "", qty: "" }] : [{ id: "0", name: "", qty: "" }]);
+    setMessage("");
+    onToast?.("✅ Purana order load ho gaya — check karke bhej dijiye");
+  };
 
   const inputStyle = {
     width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
@@ -385,11 +543,22 @@ function RestockAlertModal({ supplier, onClose, onToast, t }) {
   };
   const labelStyle = { fontSize: 11, color: t.textMuted, display: "block", marginBottom: 4 };
 
+  // Updating an item's name auto-appends a fresh empty row once the LAST
+  // row starts getting filled in — so the shopkeeper doesn't have to keep
+  // tapping "Add Item" for every single product.
   const updateItem = (id, field, value) => {
-    setItems((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+    setItems((rows) => {
+      const updated = rows.map((r) => (r.id === id ? { ...r, [field]: value } : r));
+      const idx = updated.findIndex((r) => r.id === id);
+      const isLastRow = idx === updated.length - 1;
+      if (field === "name" && isLastRow && value.trim() !== "") {
+        updated.push({ id: `${Date.now()}`, name: "", qty: "" });
+      }
+      return updated;
+    });
   };
   const addItem = () => {
-    setItems((rows) => [...rows, { id: String(Date.now()), name: "", qty: "", unit: "" }]);
+    setItems((rows) => [...rows, { id: String(Date.now()), name: "", qty: "" }]);
   };
   const removeItem = (id) => {
     setItems((rows) => (rows.length > 1 ? rows.filter((r) => r.id !== id) : rows));
@@ -401,12 +570,34 @@ function RestockAlertModal({ supplier, onClose, onToast, t }) {
     setMessage(buildRestockMessage(name, items));
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     setErr("");
     const digits = toWhatsAppDigits(phone);
     if (!digits) return setErr("Valid WhatsApp number daaliye (10 digit ya +91 ke saath)");
     const finalMessage = message || buildRestockMessage(name, items);
     if (!finalMessage.trim()) return setErr("Message khaali hai — items daal ke pehle Generate kariye");
+
+    const cleanItems = items
+      .filter((it) => it.name.trim())
+      .map((it) => ({ name: it.name.trim(), qty: it.qty }));
+
+    setSending(true);
+    try {
+      await api("/restock-orders", {
+        method: "POST",
+        body: JSON.stringify({
+          supplier: effectiveSupplier?._id || null,
+          supplierName: name || effectiveSupplier?.name || "",
+          phone,
+          items: cleanItems,
+        }),
+      });
+      onOrderSaved?.();
+    } catch (e) {
+      onToast?.("⚠️ WhatsApp bhej rahe hain, par restock order save nahi hua — Pending Restocks mein manually check kar lena.");
+    }
+    setSending(false);
+
     const url = `https://wa.me/${digits}?text=${encodeURIComponent(finalMessage)}`;
     window.open(url, "_blank", "noopener,noreferrer");
     onToast?.("✅ WhatsApp khul gaya — bas Send dabaiye!");
@@ -445,8 +636,53 @@ function RestockAlertModal({ supplier, onClose, onToast, t }) {
 
         {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>{err}</p>}
 
-        {/* Supplier identity — locked if this came from a saved supplier,
-            editable if it's an ad-hoc/one-off number not in the system */}
+        {/* 👇 sirf ad-hoc mode mein (jab drawer se supplier fixed nahi hai) —
+            ab yeh ek search box hai, type karte hi matching suppliers dikhte hain */}
+        {!supplier && suppliers.length > 0 && (
+          <div style={{ position: "relative" }}>
+            <label style={labelStyle}>Search Existing Supplier (optional)</label>
+            <input
+              className="ui-input"
+              style={inputStyle}
+              value={pickedSupplier ? pickedSupplier.name : supplierQuery}
+              onChange={(e) => { setSupplierQuery(e.target.value); setPickedSupplierId(""); }}
+              placeholder="Naam type karke suggestions dekhein…"
+            />
+            {pickedSupplier && (
+              <button
+                type="button"
+                onClick={() => { setPickedSupplierId(""); setSupplierQuery(""); setName(""); setPhone(""); }}
+                style={{
+                  position: "absolute", right: 8, top: 28, background: "none", border: "none",
+                  color: t.textMuted, cursor: "pointer", fontSize: 11,
+                }}
+              >clear</button>
+            )}
+            {matchingSuppliers.length > 0 && (
+              <div style={{
+                position: "absolute", zIndex: 10, top: "100%", left: 0, right: 0, marginTop: 4,
+                background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 10,
+                boxShadow: "0 8px 20px rgba(0,0,0,0.12)", overflow: "hidden",
+              }}>
+                {matchingSuppliers.map((s) => (
+                  <button
+                    key={s._id}
+                    type="button"
+                    onClick={() => handlePickSupplier(s)}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
+                      background: "transparent", border: "none", cursor: "pointer",
+                      fontSize: 12, color: t.textPrimary,
+                    }}
+                  >
+                    {s.name}{s.phone ? ` · ${s.phone}` : ""}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
             <label style={labelStyle}>Supplier Name</label>
@@ -454,7 +690,7 @@ function RestockAlertModal({ supplier, onClose, onToast, t }) {
               className="ui-input" style={inputStyle} value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. TechSource India"
-              disabled={!!supplier}
+              disabled={!!supplier || !!pickedSupplier}
             />
           </div>
           <div>
@@ -463,18 +699,30 @@ function RestockAlertModal({ supplier, onClose, onToast, t }) {
               className="ui-input" style={inputStyle} value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="10-digit or +91…"
+              disabled={!!pickedSupplier && !!pickedSupplier.phone}
             />
           </div>
         </div>
-        {!supplier && (
+        {!supplier && !pickedSupplier && (
           <p style={{ fontSize: 11, color: t.textMuted, margin: 0 }}>
-            Ye supplier tere system mein saved nahi hai — bas number daal, msg chala jaayega.
+            Upar search se supplier chunn, ya neeche manually naya number daal.
           </p>
         )}
+
+        {/* Previous restocks for this supplier — reorder in one click */}
+        <RestockHistory historyOrders={historyOrders} onReorder={handleReorder} t={t} />
 
         {/* Items list */}
         <div>
           <label style={labelStyle}>Restock Items</label>
+          {supplierProductNames.length > 0 && (
+            <p style={{ fontSize: 10, color: t.textMuted, margin: "0 0 6px" }}>
+              Suggestions: {supplierProductNames.slice(0, 6).join(", ")}{supplierProductNames.length > 6 ? "…" : ""}
+            </p>
+          )}
+          <datalist id="restock-item-suggestions">
+            {supplierProductNames.map((n) => <option key={n} value={n} />)}
+          </datalist>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {items.map((it) => (
               <div key={it.id} style={{ display: "flex", gap: 6 }}>
@@ -482,16 +730,12 @@ function RestockAlertModal({ supplier, onClose, onToast, t }) {
                   className="ui-input" style={{ ...inputStyle, flex: 3 }}
                   value={it.name} onChange={(e) => updateItem(it.id, "name", e.target.value)}
                   placeholder="Product name"
+                  list="restock-item-suggestions"
                 />
                 <input
                   className="ui-input" style={{ ...inputStyle, flex: 1 }}
                   value={it.qty} onChange={(e) => updateItem(it.id, "qty", e.target.value)}
                   placeholder="Qty"
-                />
-                <input
-                  className="ui-input" style={{ ...inputStyle, flex: 1 }}
-                  value={it.unit} onChange={(e) => updateItem(it.id, "unit", e.target.value)}
-                  placeholder="Unit"
                 />
                 <button
                   onClick={() => removeItem(it.id)}
@@ -517,6 +761,10 @@ function RestockAlertModal({ supplier, onClose, onToast, t }) {
             }}
           ><Icon id="plus" size={11} /> Add Item</button>
         </div>
+
+        <p style={{ fontSize: 11, color: t.textMuted, margin: 0 }}>
+          Ye items "Pending Restocks" list mein bhi dikhenge — jab supplier maal de de, "Mark Complete" dabana, stock apne aap Inventory mein add ho jaayega. Agar 2 din mein maal nahi aaya, hum yaad dilaenge.
+        </p>
 
         <button
           type="button"
@@ -544,12 +792,232 @@ function RestockAlertModal({ supplier, onClose, onToast, t }) {
             background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
             borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
           }}>Cancel</button>
-          <button onClick={handleSend} style={{
+          <button onClick={handleSend} disabled={sending} style={{
             background: t.green, color: "#fff", border: "none", borderRadius: 10,
-            padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+            padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer",
+            opacity: sending ? 0.7 : 1,
             display: "flex", alignItems: "center", gap: 6,
-          }}><Icon id="whatsapp" size={14} /> Open WhatsApp & Send</button>
+          }}><Icon id="whatsapp" size={14} /> {sending ? "Saving..." : "Open WhatsApp & Send"}</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── PENDING RESTOCKS — global list of restock orders sent via WhatsApp
+// (supplier-linked or ad-hoc). "Mark Complete" is the actual trigger that
+// adds the ordered quantities into Inventory as real stock, matching by
+// product name (case-insensitive) or creating a new product if no match.
+function PendingRestocksCard({ orders, loading, error, onComplete, t }) {
+  const [completingId, setCompletingId] = useState(null);
+  const pending = orders.filter((o) => o.status !== "Completed");
+
+  const handleComplete = async (order) => {
+    setCompletingId(order._id);
+    await onComplete(order);
+    setCompletingId(null);
+  };
+
+  if (!loading && pending.length === 0) return null;
+
+  return (
+    <div className="ui-card" style={{
+      borderRadius: "16px", background: t.bgCard, border: `1px solid ${t.border}`, padding: "18px 20px",
+      display: "flex", flexDirection: "column", gap: 12,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ color: t.orange, display: "flex" }}><Icon id="box" size={16} /></span>
+        <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 15, color: t.textPrimary, margin: 0 }}>
+          Pending Restocks
+        </h3>
+        {!loading && <span style={{ fontSize: 11, color: t.textMuted }}>({pending.length})</span>}
+      </div>
+
+      {loading ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} height={54} radius={10} t={t} />)}
+        </div>
+      ) : error ? (
+        <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>{error}</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {pending.map((order) => (
+            <div key={order._id} style={{
+              border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 12px",
+              display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap",
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, margin: 0 }}>
+                    {order.supplierName || "Ad-hoc supplier"}
+                  </p>
+                  <RestockStatusBadge status={order.status || "Pending"} t={t} />
+                </div>
+                <p style={{ fontSize: 11, color: t.textMuted, margin: "4px 0 0" }}>
+                  {(order.items || []).map((it) => `${it.name}${it.qty ? ` (${it.qty})` : ""}`).join(", ")}
+                </p>
+                <p style={{ fontSize: 10, color: t.textMuted, margin: "2px 0 0" }}>
+                  {formatDate(order.createdAt)}
+                  {order.expectedDate ? ` · Expected ${formatDate(order.expectedDate)}` : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => handleComplete(order)}
+                disabled={completingId === order._id}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+                  fontSize: 11, fontWeight: 700, color: "#fff",
+                  background: t.green, border: "none", borderRadius: 8,
+                  padding: "7px 12px", cursor: completingId === order._id ? "not-allowed" : "pointer",
+                  opacity: completingId === order._id ? 0.6 : 1,
+                }}
+              ><Icon id="check" size={12} /> {completingId === order._id ? "Adding..." : "Mark Complete"}</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── RESTOCK CHECK-IN POPUP — asks "maal aaya kya?" for orders that have
+// been Pending for 2+ days. Yes -> marks Complete (pushes stock into
+// Inventory, same as the button in PendingRestocksCard). No -> asks for a
+// new expected date and saves it so the order shows up with that ETA and
+// gets asked again after that date passes.
+function useDueCheckins(orders) {
+  const STORAGE_KEY = "restock_checkin_lastAsked_v1";
+  const [queue, setQueue] = useState([]);
+
+  useEffect(() => {
+    let lastAsked = {};
+    try { lastAsked = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch { /* ignore */ }
+
+    const now = Date.now();
+    const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+
+    const due = orders.filter((o) => {
+      if (!o._id || o.status === "Completed") return false;
+      const anchor = o.expectedDate ? new Date(o.expectedDate).getTime() : (o.createdAt ? new Date(o.createdAt).getTime() : null);
+      if (!anchor) return false;
+      if (now - anchor < 0) return false; // expected date is still in the future
+      if (!o.expectedDate && now - anchor < TWO_DAYS) return false; // no ETA given yet — wait 2 days from order date
+      const last = lastAsked[o._id] || 0;
+      if (now - last < TWO_DAYS) return false; // already asked recently, don't nag
+      return true;
+    });
+
+    setQueue(due.map((o) => o._id));
+  }, [orders]);
+
+  const markAsked = (id) => {
+    let lastAsked = {};
+    try { lastAsked = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch { /* ignore */ }
+    lastAsked[id] = Date.now();
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(lastAsked)); } catch { /* ignore */ }
+    setQueue((q) => q.filter((qid) => qid !== id));
+  };
+
+  return { queue, markAsked };
+}
+
+function RestockCheckinModal({ order, onYes, onNo, onDismiss, t }) {
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [expectedDate, setExpectedDate] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const itemsText = (order.items || []).map((it) => `${it.name}${it.qty ? ` (${it.qty})` : ""}`).join(", ");
+
+  const handleNoSubmit = async () => {
+    setSaving(true);
+    await onNo(order, expectedDate || null);
+    setSaving(false);
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1300, padding: 16,
+    }}>
+      <div style={{
+        background: t.bgCard, border: `1px solid ${t.border}`, borderRadius: 16,
+        padding: 22, width: "100%", maxWidth: 380, display: "flex", flexDirection: "column",
+        gap: 12, animation: "modalIn 0.2s ease",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: t.orange, display: "flex" }}><Icon id="box" size={18} /></span>
+          <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 17, color: t.textPrimary, margin: 0 }}>
+            Restock Check-in
+          </h3>
+        </div>
+        <p style={{ fontSize: 13, color: t.textPrimary, margin: 0 }}>
+          <strong>{order.supplierName || "Supplier"}</strong> se bheja gaya restock —
+        </p>
+        <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>{itemsText}</p>
+        <p style={{ fontSize: 13, color: t.textPrimary, margin: "4px 0 0", fontWeight: 600 }}>Kya maal aa gaya?</p>
+
+        {!showDatePicker ? (
+          <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+            <button
+              onClick={() => setShowDatePicker(true)}
+              style={{
+                flex: 1, background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
+                borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}
+            >Nahi, abhi tak nahi</button>
+            <button
+              onClick={() => onYes(order)}
+              style={{
+                flex: 1, background: t.green, color: "#fff", border: "none",
+                borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              }}
+            >✓ Haan, aagya</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div>
+              <label style={{ fontSize: 11, color: t.textMuted, display: "block", marginBottom: 4 }}>
+                Kab tak aane ki umeed hai?
+              </label>
+              <input
+                type="date"
+                value={expectedDate}
+                onChange={(e) => setExpectedDate(e.target.value)}
+                style={{
+                  width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
+                  border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 12px",
+                  fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", outline: "none",
+                }}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => setShowDatePicker(false)}
+                style={{
+                  flex: 1, background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
+                  borderRadius: 10, padding: "9px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                }}
+              >Back</button>
+              <button
+                onClick={handleNoSubmit}
+                disabled={saving}
+                style={{
+                  flex: 1, background: t.accent, color: "#fff", border: "none",
+                  borderRadius: 10, padding: "9px 12px", fontSize: 13, fontWeight: 700,
+                  cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1,
+                }}
+              >{saving ? "Saving..." : "Save & remind later"}</button>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => onDismiss(order)}
+          style={{
+            background: "none", border: "none", color: t.textMuted, fontSize: 11,
+            cursor: "pointer", textAlign: "center", marginTop: 4, textDecoration: "underline",
+          }}
+        >Baad mein poochna</button>
       </div>
     </div>
   );
@@ -558,6 +1026,7 @@ function RestockAlertModal({ supplier, onClose, onToast, t }) {
 // ─── ADD / EDIT SUPPLIER MODAL ─────────────────────────────────────────────
 function SupplierFormModal({ initial, onClose, onSaved, onToast, existingCategories, t }) {
   const isEdit = !!initial;
+  const api = useApi();
   const [name, setName] = useState(initial?.name || "");
   const [category, setCategory] = useState(initial?.category || "");
   const [contact, setContact] = useState(initial?.contact || "");
@@ -587,23 +1056,14 @@ function SupplierFormModal({ initial, onClose, onSaved, onToast, existingCategor
     setSaving(true);
     try {
       const payload = { name, category, contact, email, phone, location, status, paymentTerms, rating: Number(rating) };
-      const url = isEdit ? `${BACKEND}/api/suppliers/${initial._id}` : `${BACKEND}/api/suppliers`;
-      const method = isEdit ? "PUT" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
+      await api(isEdit ? `/suppliers/${initial._id}` : "/suppliers", {
+        method: isEdit ? "PUT" : "POST",
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not save supplier");
       onSaved?.();
       onToast?.(isEdit ? "✅ Supplier updated!" : "✅ Supplier added!");
       onClose();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { setErr(e.message); } finally { setSaving(false); }
   };
 
   return (
@@ -721,8 +1181,9 @@ function SupplierFormModal({ initial, onClose, onSaved, onToast, existingCategor
   );
 }
 
-// ─── ADD PURCHASE MODAL — record a new purchase from this supplier ───────
+{/* // ─── ADD PURCHASE MODAL — record a new purchase from this supplier ─────── */ }
 function AddPurchaseModal({ supplier, onClose, onSaved, onToast, t }) {
+  const api = useApi();
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [paidAmount, setPaidAmount] = useState("");
@@ -755,20 +1216,13 @@ function AddPurchaseModal({ supplier, onClose, onSaved, onToast, t }) {
 
     setSaving(true);
     try {
-      const res = await fetch(`${BACKEND}/api/supplier-purchases`, {
+      await api("/supplier-purchases", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          supplier: supplier._id,
-          description,
-          amount: amt,
-          paidAmount: paid,
-          date,
+          supplier: supplier._id, description, amount: amt, paidAmount: paid, date,
           dueDate: paid < amt ? (dueDate || null) : null,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not save purchase");
       onSaved?.();
       onToast?.("✅ Purchase entry added to the ledger!");
       onClose();
@@ -872,8 +1326,9 @@ function AddPurchaseModal({ supplier, onClose, onSaved, onToast, t }) {
   );
 }
 
-// ─── EDIT PURCHASE MODAL — correct a previously logged entry ─────────────
+{/* // ─── EDIT PURCHASE MODAL — correct a previously logged entry ───────────── */ }
 function EditPurchaseModal({ purchase, onClose, onSaved, onToast, t }) {
+  const api = useApi();
   const [description, setDescription] = useState(purchase.description || "");
   const [amount, setAmount] = useState(purchase.amount);
   const [paidAmount, setPaidAmount] = useState(purchase.paidAmount);
@@ -886,7 +1341,6 @@ function EditPurchaseModal({ purchase, onClose, onSaved, onToast, t }) {
     width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
     border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 12px",
     fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", outline: "none",
-    "--focus-ring": `${t.accent}33`,
   };
   const labelStyle = { fontSize: 11, color: t.textMuted, display: "block", marginBottom: 4 };
   const pendingNow = Math.max(0, Number(amount || 0) - Number(paidAmount || 0));
@@ -900,7 +1354,7 @@ function EditPurchaseModal({ purchase, onClose, onSaved, onToast, t }) {
 
     setSaving(true);
     try {
-      const res = await fetch(`${BACKEND}/api/supplier-purchases/${purchase._id}`, {
+      await api(`/supplier-purchases/${purchase._id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -911,8 +1365,6 @@ function EditPurchaseModal({ purchase, onClose, onSaved, onToast, t }) {
           dueDate: paid < amt ? (dueDate || null) : null,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not update entry");
       onSaved?.();
       onToast?.("✅ Entry updated!");
       onClose();
@@ -1000,8 +1452,9 @@ function EditPurchaseModal({ purchase, onClose, onSaved, onToast, t }) {
   );
 }
 
-// ─── RECORD PAYMENT MODAL — pay down a pending balance ────────────────────
+{/* // ─── RECORD PAYMENT MODAL — pay down a pending balance ──────────────────── */ }
 function RecordPaymentModal({ purchase, onClose, onSaved, onToast, t }) {
+  const api = useApi();
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -1010,7 +1463,6 @@ function RecordPaymentModal({ purchase, onClose, onSaved, onToast, t }) {
     width: "100%", boxSizing: "border-box", background: `${t.accent}08`,
     border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 12px",
     fontSize: 13, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", outline: "none",
-    "--focus-ring": `${t.accent}33`,
   };
 
   const handleSave = async () => {
@@ -1021,13 +1473,11 @@ function RecordPaymentModal({ purchase, onClose, onSaved, onToast, t }) {
 
     setSaving(true);
     try {
-      const res = await fetch(`${BACKEND}/api/supplier-purchases/${purchase._id}/pay`, {
+      await api(`/supplier-purchases/${purchase._id}/pay`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: amt }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not record payment");
       onSaved?.();
       onToast?.("✅ Payment recorded!");
       onClose();
@@ -1222,8 +1672,9 @@ function KhataSection({ supplier, onToast, t }) {
   );
 }
 
-// ─── SUPPLIER DETAIL DRAWER ───────────────────────────────────────────────────
-function SupplierDrawer({ supplier, onClose, onEdit, onDeleted, onToast, t }) {
+{/* // ─── SUPPLIER DETAIL DRAWER ─────────────────────────────────────────────────── */ }
+function SupplierDrawer({ supplier, products = [], allOrders = [], onClose, onEdit, onDeleted, onToast, onRestockOrderSaved, t }) {
+    const api = useApi();
     const [deleting, setDeleting] = useState(false);
     const [showRestock, setShowRestock] = useState(false);
     if (!supplier) return null;
@@ -1232,8 +1683,7 @@ function SupplierDrawer({ supplier, onClose, onEdit, onDeleted, onToast, t }) {
       if (!window.confirm(`Delete ${supplier.name}? This cannot be undone.`)) return;
       setDeleting(true);
       try {
-        const res = await fetch(`${BACKEND}/api/suppliers/${supplier._id}`, { method: "DELETE" });
-        if (!res.ok) throw new Error("Could not delete supplier");
+        await api(`/suppliers/${supplier._id}`, { method: "DELETE" });
         onToast?.("✅ Supplier deleted");
         onDeleted?.();
         onClose();
@@ -1282,8 +1732,11 @@ function SupplierDrawer({ supplier, onClose, onEdit, onDeleted, onToast, t }) {
                 {showRestock && (
                   <RestockAlertModal
                     supplier={supplier}
+                    products={products}
+                    allOrders={allOrders}
                     onClose={() => setShowRestock(false)}
                     onToast={onToast}
+                    onOrderSaved={onRestockOrderSaved}
                     t={t}
                   />
                 )}
@@ -1383,7 +1836,7 @@ function SupplierDrawer({ supplier, onClose, onEdit, onDeleted, onToast, t }) {
                     <StarRating rating={supplier.rating} t={t} />
                 </div>
 
-                {/* Purchase ledger — new */}
+                {/* Purchase ledger */}
                 <KhataSection supplier={supplier} onToast={onToast} t={t} />
 
                 {/* Contact Info */}
@@ -1446,262 +1899,262 @@ function SupplierDrawer({ supplier, onClose, onEdit, onDeleted, onToast, t }) {
 
 // ─── MOBILE CARD VIEW ─────────────────────────────────────────────────────────
 function SupplierCard({ supplier, onClick, t }) {
-    return (
-        <div
-            className="ui-card"
-            onClick={() => onClick(supplier)}
-            style={{
-                padding: "16px",
-                borderRadius: "14px",
-                border: `1px solid ${t.border}`,
-                background: t.bgCard,
-                cursor: "pointer",
-                display: "flex",
-                flexDirection: "column",
-                gap: "12px",
-                touchAction: "manipulation",
-                WebkitTapHighlightColor: "transparent",
-            }}
-        >
-            {/* Top row */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-                <div style={{ display: "flex", gap: 10, minWidth: 0 }}>
-                    <SealAvatar initials={getInitials(supplier.name)} size={32} t={t} />
-                    <div style={{ minWidth: 0 }}>
-                        <p style={{
-                            fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "14px",
-                            color: t.textPrimary, margin: 0, whiteSpace: "nowrap",
-                            overflow: "hidden", textOverflow: "ellipsis",
-                        }}>
-                            {supplier.name}
-                        </p>
-                        <p style={{ fontSize: "10px", color: t.textMuted, margin: "2px 0 0", fontFamily: "monospace" }}>
-                            {supplier.id}
-                        </p>
-                    </div>
-                </div>
-                <StatusBadge status={supplier.status} t={t} />
-            </div>
-
-            {/* Badges */}
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
-                <CategoryBadge category={supplier.category} t={t} />
-                {supplier.location && (
-                  <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: "11px", color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
-                      <Icon id="pin" size={11} /> {supplier.location}
-                  </span>
-                )}
-                {supplier.totalPending > 0 && (
-                  <span style={{
-                    display: "flex", alignItems: "center", gap: 3, fontSize: "10px", fontWeight: 700,
-                    color: t.red, background: t.redBg, borderRadius: 99, padding: "3px 8px",
-                  }}>
-                      Due {inr(supplier.totalPending)}
-                  </span>
-                )}
-            </div>
-
-            {/* Stats row */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                    <p style={{
-                        fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "15px",
-                        color: t.textPrimary, margin: 0,
-                    }}>
-                        {inr(supplier.totalPurchased)}
-                    </p>
-                    <p style={{ fontSize: "10px", color: t.textMuted, margin: "2px 0 0" }}>
-                        invested · {supplier.linkedProductCount} products
-                    </p>
-                </div>
-                <StarRating rating={supplier.rating} t={t} />
-                <span style={{ color: t.textMuted, display: "flex" }}><Icon id="chevronRight" size={16} /></span>
-            </div>
+  return (
+    <div
+      className="ui-card"
+      onClick={() => onClick(supplier)}
+      style={{
+        padding: "16px",
+        borderRadius: "14px",
+        border: `1px solid ${t.border}`,
+        background: t.bgCard,
+        cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        gap: "12px",
+        touchAction: "manipulation",
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
+      {/* Top row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+        <div style={{ display: "flex", gap: 10, minWidth: 0 }}>
+          <SealAvatar initials={getInitials(supplier.name)} size={32} t={t} />
+          <div style={{ minWidth: 0 }}>
+            <p style={{
+              fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "14px",
+              color: t.textPrimary, margin: 0, whiteSpace: "nowrap",
+              overflow: "hidden", textOverflow: "ellipsis",
+            }}>
+              {supplier.name}
+            </p>
+            <p style={{ fontSize: "10px", color: t.textMuted, margin: "2px 0 0", fontFamily: "monospace" }}>
+              {supplier.id}
+            </p>
+          </div>
         </div>
-    );
+        <StatusBadge status={supplier.status} t={t} />
+      </div>
+
+      {/* Badges */}
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+        <CategoryBadge category={supplier.category} t={t} />
+        {supplier.location && (
+          <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: "11px", color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+            <Icon id="pin" size={11} /> {supplier.location}
+          </span>
+        )}
+        {supplier.totalPending > 0 && (
+          <span style={{
+            display: "flex", alignItems: "center", gap: 3, fontSize: "10px", fontWeight: 700,
+            color: t.red, background: t.redBg, borderRadius: 99, padding: "3px 8px",
+          }}>
+            Due {inr(supplier.totalPending)}
+          </span>
+        )}
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <p style={{
+            fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "15px",
+            color: t.textPrimary, margin: 0,
+          }}>
+            {inr(supplier.totalPurchased)}
+          </p>
+          <p style={{ fontSize: "10px", color: t.textMuted, margin: "2px 0 0" }}>
+            invested · {supplier.linkedProductCount} products
+          </p>
+        </div>
+        <StarRating rating={supplier.rating} t={t} />
+        <span style={{ color: t.textMuted, display: "flex" }}><Icon id="chevronRight" size={16} /></span>
+      </div>
+    </div>
+  );
 }
 
 // ─── DESKTOP TABLE ROW ────────────────────────────────────────────────────────
 function SupplierRow({ supplier, onClick, t, isLast }) {
-    return (
-        <tr
-            onClick={() => onClick(supplier)}
-            style={{
-                borderBottom: !isLast ? `1px solid ${t.borderLight || t.border}` : "none",
-                cursor: "pointer",
-                transition: "background 0.15s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}06`)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-        >
-            <td style={{ padding: "14px 0" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <SealAvatar initials={getInitials(supplier.name)} size={28} t={t} />
-                    <div>
-                        <p style={{
-                            fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "13px",
-                            color: t.textPrimary, margin: 0,
-                        }}>
-                            {supplier.name}
-                        </p>
-                        <p style={{ fontSize: "10px", color: t.textMuted, margin: "2px 0 0", fontFamily: "monospace" }}>
-                            {supplier.id}
-                        </p>
-                    </div>
-                </div>
-            </td>
-            <td style={{ padding: "14px 8px" }}>
-                <CategoryBadge category={supplier.category} t={t} />
-            </td>
-            <td style={{ padding: "14px 8px" }}>
-                <div>
-                    <p style={{
-                        fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
-                        color: t.textPrimary, margin: 0, fontWeight: 500,
-                    }}>
-                        {supplier.contact}
-                    </p>
-                    <p style={{ fontSize: "11px", color: t.textMuted, margin: "1px 0 0" }}>
-                        {supplier.location || "—"}
-                    </p>
-                </div>
-            </td>
-            <td style={{ padding: "14px 8px" }}>
-                <p style={{
-                    fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px",
-                    color: t.textPrimary, margin: 0,
-                }}>
-                    {inr(supplier.totalPurchased)}
-                </p>
-                <p style={{ fontSize: "10px", color: t.textMuted, margin: "1px 0 0" }}>
-                    invested
-                </p>
-            </td>
-            <td style={{ padding: "14px 8px" }}>
-                {supplier.totalPending > 0 ? (
-                    <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.red, margin: 0 }}>
-                        {inr(supplier.totalPending)}
-                    </p>
-                ) : (
-                    <p style={{ fontSize: "11px", color: t.textMuted, margin: 0 }}>—</p>
-                )}
-            </td>
-            <td style={{ padding: "14px 8px" }}>
-                <StarRating rating={supplier.rating} t={t} />
-            </td>
-            <td style={{ padding: "14px 8px" }}>
-                <StatusBadge status={supplier.status} t={t} />
-            </td>
-            <td style={{ padding: "14px 0", textAlign: "right" }}>
-                <span style={{ color: t.textMuted, display: "inline-flex" }}><Icon id="chevronRight" size={15} /></span>
-            </td>
-        </tr>
-    );
+  return (
+    <tr
+      onClick={() => onClick(supplier)}
+      style={{
+        borderBottom: !isLast ? `1px solid ${t.borderLight || t.border}` : "none",
+        cursor: "pointer",
+        transition: "background 0.15s",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}06`)}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      <td style={{ padding: "14px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <SealAvatar initials={getInitials(supplier.name)} size={28} t={t} />
+          <div>
+            <p style={{
+              fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "13px",
+              color: t.textPrimary, margin: 0,
+            }}>
+              {supplier.name}
+            </p>
+            <p style={{ fontSize: "10px", color: t.textMuted, margin: "2px 0 0", fontFamily: "monospace" }}>
+              {supplier.id}
+            </p>
+          </div>
+        </div>
+      </td>
+      <td style={{ padding: "14px 8px" }}>
+        <CategoryBadge category={supplier.category} t={t} />
+      </td>
+      <td style={{ padding: "14px 8px" }}>
+        <div>
+          <p style={{
+            fontFamily: "'DM Sans', sans-serif", fontSize: "12px",
+            color: t.textPrimary, margin: 0, fontWeight: 500,
+          }}>
+            {supplier.contact}
+          </p>
+          <p style={{ fontSize: "11px", color: t.textMuted, margin: "1px 0 0" }}>
+            {supplier.location || "—"}
+          </p>
+        </div>
+      </td>
+      <td style={{ padding: "14px 8px" }}>
+        <p style={{
+          fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px",
+          color: t.textPrimary, margin: 0,
+        }}>
+          {inr(supplier.totalPurchased)}
+        </p>
+        <p style={{ fontSize: "10px", color: t.textMuted, margin: "1px 0 0" }}>
+          invested
+        </p>
+      </td>
+      <td style={{ padding: "14px 8px" }}>
+        {supplier.totalPending > 0 ? (
+          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.red, margin: 0 }}>
+            {inr(supplier.totalPending)}
+          </p>
+        ) : (
+          <p style={{ fontSize: "11px", color: t.textMuted, margin: 0 }}>—</p>
+        )}
+      </td>
+      <td style={{ padding: "14px 8px" }}>
+        <StarRating rating={supplier.rating} t={t} />
+      </td>
+      <td style={{ padding: "14px 8px" }}>
+        <StatusBadge status={supplier.status} t={t} />
+      </td>
+      <td style={{ padding: "14px 0", textAlign: "right" }}>
+        <span style={{ color: t.textMuted, display: "inline-flex" }}><Icon id="chevronRight" size={15} /></span>
+      </td>
+    </tr>
+  );
 }
 
 // ─── SUMMARY KPI ──────────────────────────────────────────────────────────────
 function SummaryKpi({ label, value, sub, trendDir, loading, t }) {
-    const colors = { up: t.green, down: t.red, neu: t.orange };
-    const bgs = { up: t.greenBg, down: t.redBg, neu: t.orangeBg };
-    return (
-        <div className="ui-card" style={{
-            borderRadius: "16px", padding: "18px 16px",
-            background: t.bgCard, border: `1px solid ${t.border}`,
-            minWidth: 0,
-        }}>
-            <p style={{
-                fontSize: "9px", fontWeight: 600, textTransform: "uppercase",
-                letterSpacing: "0.1em", color: t.textMuted, margin: 0,
-                fontFamily: "'DM Sans', sans-serif",
+  const colors = { up: t.green, down: t.red, neu: t.orange };
+  const bgs = { up: t.greenBg, down: t.redBg, neu: t.orangeBg };
+  return (
+    <div className="ui-card" style={{
+      borderRadius: "16px", padding: "18px 16px",
+      background: t.bgCard, border: `1px solid ${t.border}`,
+      minWidth: 0,
+    }}>
+      <p style={{
+        fontSize: "9px", fontWeight: 600, textTransform: "uppercase",
+        letterSpacing: "0.1em", color: t.textMuted, margin: 0,
+        fontFamily: "'DM Sans', sans-serif",
+      }}>
+        {label}
+      </p>
+      {loading ? (
+        <>
+          <Skeleton width="60%" height={22} t={t} style={{ margin: "8px 0 8px" }} />
+          <Skeleton width="45%" height={16} radius={99} t={t} />
+        </>
+      ) : (
+        <>
+          <p style={{
+            fontFamily: "'Syne', sans-serif",
+            fontSize: "clamp(20px, 5vw, 26px)",
+            fontWeight: 900, color: t.textPrimary,
+            letterSpacing: "-0.03em", margin: "6px 0 6px", lineHeight: 1,
+            wordBreak: "break-word",
+          }}>
+            {value}
+          </p>
+          {sub && (
+            <span style={{
+              fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "99px",
+              color: colors[trendDir], background: bgs[trendDir],
+              display: "inline-block",
             }}>
-                {label}
-            </p>
-            {loading ? (
-                <>
-                    <Skeleton width="60%" height={22} t={t} style={{ margin: "8px 0 8px" }} />
-                    <Skeleton width="45%" height={16} radius={99} t={t} />
-                </>
-            ) : (
-                <>
-                    <p style={{
-                        fontFamily: "'Syne', sans-serif",
-                        fontSize: "clamp(20px, 5vw, 26px)",
-                        fontWeight: 900, color: t.textPrimary,
-                        letterSpacing: "-0.03em", margin: "6px 0 6px", lineHeight: 1,
-                        wordBreak: "break-word",
-                    }}>
-                        {value}
-                    </p>
-                    {sub && (
-                        <span style={{
-                            fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "99px",
-                            color: colors[trendDir], background: bgs[trendDir],
-                            display: "inline-block",
-                        }}>
-                            {sub}
-                        </span>
-                    )}
-                </>
-            )}
-        </div>
-    );
+              {sub}
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 // ─── SKELETON ROWS / CARDS for loading states ─────────────────────────────────
 function SkeletonRow({ t, isLast }) {
-    return (
-        <tr style={{ borderBottom: !isLast ? `1px solid ${t.borderLight || t.border}` : "none" }}>
-            <td style={{ padding: "14px 0" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <SkeletonCircle size={28} t={t} />
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                        <Skeleton width={110} height={11} t={t} />
-                        <Skeleton width={70} height={9} t={t} />
-                    </div>
-                </div>
-            </td>
-            <td style={{ padding: "14px 8px" }}><Skeleton width={70} height={18} radius={99} t={t} /></td>
-            <td style={{ padding: "14px 8px" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    <Skeleton width={90} height={11} t={t} />
-                    <Skeleton width={60} height={9} t={t} />
-                </div>
-            </td>
-            <td style={{ padding: "14px 8px" }}><Skeleton width={80} height={13} t={t} /></td>
-            <td style={{ padding: "14px 8px" }}><Skeleton width={70} height={13} t={t} /></td>
-            <td style={{ padding: "14px 8px" }}><Skeleton width={60} height={11} t={t} /></td>
-            <td style={{ padding: "14px 8px" }}><Skeleton width={54} height={18} radius={99} t={t} /></td>
-            <td style={{ padding: "14px 0" }} />
-        </tr>
-    );
+  return (
+    <tr style={{ borderBottom: !isLast ? `1px solid ${t.borderLight || t.border}` : "none" }}>
+      <td style={{ padding: "14px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <SkeletonCircle size={28} t={t} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <Skeleton width={110} height={11} t={t} />
+            <Skeleton width={70} height={9} t={t} />
+          </div>
+        </div>
+      </td>
+      <td style={{ padding: "14px 8px" }}><Skeleton width={70} height={18} radius={99} t={t} /></td>
+      <td style={{ padding: "14px 8px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <Skeleton width={90} height={11} t={t} />
+          <Skeleton width={60} height={9} t={t} />
+        </div>
+      </td>
+      <td style={{ padding: "14px 8px" }}><Skeleton width={80} height={13} t={t} /></td>
+      <td style={{ padding: "14px 8px" }}><Skeleton width={70} height={13} t={t} /></td>
+      <td style={{ padding: "14px 8px" }}><Skeleton width={60} height={11} t={t} /></td>
+      <td style={{ padding: "14px 8px" }}><Skeleton width={54} height={18} radius={99} t={t} /></td>
+      <td style={{ padding: "14px 0" }} />
+    </tr>
+  );
 }
 
 function SkeletonCard({ t }) {
-    return (
-        <div className="ui-card" style={{
-            padding: "16px", borderRadius: "14px", border: `1px solid ${t.border}`,
-            background: t.bgCard, display: "flex", flexDirection: "column", gap: "12px",
-        }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <div style={{ display: "flex", gap: 10 }}>
-                    <SkeletonCircle size={32} t={t} />
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5, justifyContent: "center" }}>
-                        <Skeleton width={100} height={12} t={t} />
-                        <Skeleton width={60} height={9} t={t} />
-                    </div>
-                </div>
-                <Skeleton width={54} height={18} radius={99} t={t} />
-            </div>
-            <Skeleton width={80} height={16} radius={99} t={t} />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    <Skeleton width={70} height={14} t={t} />
-                    <Skeleton width={54} height={9} t={t} />
-                </div>
-                <Skeleton width={60} height={11} t={t} />
-            </div>
+  return (
+    <div className="ui-card" style={{
+      padding: "16px", borderRadius: "14px", border: `1px solid ${t.border}`,
+      background: t.bgCard, display: "flex", flexDirection: "column", gap: "12px",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ display: "flex", gap: 10 }}>
+          <SkeletonCircle size={32} t={t} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, justifyContent: "center" }}>
+            <Skeleton width={100} height={12} t={t} />
+            <Skeleton width={60} height={9} t={t} />
+          </div>
         </div>
-    );
+        <Skeleton width={54} height={18} radius={99} t={t} />
+      </div>
+      <Skeleton width={80} height={16} radius={99} t={t} />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <Skeleton width={70} height={14} t={t} />
+          <Skeleton width={54} height={9} t={t} />
+        </div>
+        <Skeleton width={60} height={11} t={t} />
+      </div>
+    </div>
+  );
 }
 
 // ─── STYLES ───────────────────────────────────────────────────────────────────
@@ -1792,327 +2245,401 @@ const styles = `
   }
 `;
 
-// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
+{/* // ─── MAIN PAGE ──────────────────────────────────────────────────────────────── */}
 export default function Suppliers() {
-    const { t } = useTheme();
-    const { loading, error, suppliers, overallKhata, refresh } = useSuppliersData();
+  const api = useApi(); 
+  const { t } = useTheme();
+ const { loading, error, suppliers, products, overallKhata, refresh } = useSuppliersData();
+  const { loading: restockLoading, error: restockError, orders: restockOrders, refresh: refreshRestockOrders } = useRestockOrders();
 
-    const [search, setSearch] = useState("");
-    const [catFilter, setCatFilter] = useState("All");
-    const [statusFilter, setStatusFilter] = useState("All");
-    const [selected, setSelected] = useState(null);
-    const [showForm, setShowForm] = useState(false);
-    const [editTarget, setEditTarget] = useState(null);
-    const [toast, setToast] = useState("");
-    const [showAdHocRestock, setShowAdHocRestock] = useState(false);
+  const [search, setSearch] = useState("");
+  const [catFilter, setCatFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [selected, setSelected] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [toast, setToast] = useState("");
+  const [showAdHocRestock, setShowAdHocRestock] = useState(false);
 
-    const filtered = suppliers.filter((s) => {
-        const matchSearch =
-            s.name.toLowerCase().includes(search.toLowerCase()) ||
-            s.id.toLowerCase().includes(search.toLowerCase()) ||
-            s.contact.toLowerCase().includes(search.toLowerCase());
-        const matchCat = catFilter === "All" || s.category === catFilter;
-        const matchStatus = statusFilter === "All" || s.status === statusFilter;
-        return matchSearch && matchCat && matchStatus;
-    });
+  const { queue: checkinQueue, markAsked } = useDueCheckins(restockOrders);
+  const checkinOrder = checkinQueue.length ? restockOrders.find((o) => o._id === checkinQueue[0]) : null;
 
-    const activeCount = suppliers.filter((s) => s.status === "Active").length;
-    const ratedSuppliers = suppliers.filter((s) => s.rating > 0);
-    const avgRating = ratedSuppliers.length
-      ? (ratedSuppliers.reduce((sum, s) => sum + s.rating, 0) / ratedSuppliers.length).toFixed(1)
-      : "0.0";
-    const totalInvested = overallKhata?.totalPurchased || 0;
-    const totalPending = overallKhata?.totalPending || 0;
+  const filtered = suppliers.filter((s) => {
+    const matchSearch =
+      s.name.toLowerCase().includes(search.toLowerCase()) ||
+      s.id.toLowerCase().includes(search.toLowerCase()) ||
+      s.contact.toLowerCase().includes(search.toLowerCase());
+    const matchCat = catFilter === "All" || s.category === catFilter;
+    const matchStatus = statusFilter === "All" || s.status === statusFilter;
+    return matchSearch && matchCat && matchStatus;
+  });
 
-    // Real categories, derived from suppliers actually saved — grows as
-    // the shop owner types new ones in the Add/Edit Supplier form.
-    const knownCategories = [...new Set(suppliers.map((s) => s.category).filter(Boolean))].sort();
-    const categoryFilterOptions = ["All", ...knownCategories];
+  const activeCount = suppliers.filter((s) => s.status === "Active").length;
+  const ratedSuppliers = suppliers.filter((s) => s.rating > 0);
+  const avgRating = ratedSuppliers.length
+    ? (ratedSuppliers.reduce((sum, s) => sum + s.rating, 0) / ratedSuppliers.length).toFixed(1)
+    : "0.0";
+  const totalInvested = overallKhata?.totalPurchased || 0;
+  const totalPending = overallKhata?.totalPending || 0;
 
-    const openEdit = (supplier) => {
-        setSelected(null);
-        setEditTarget(supplier);
-        setShowForm(true);
-    };
+  // Real categories, derived from suppliers actually saved — grows as
+  // the shop owner types new ones in the Add/Edit Supplier form.
+  const knownCategories = [...new Set(suppliers.map((s) => s.category).filter(Boolean))].sort();
+  const categoryFilterOptions = ["All", ...knownCategories];
 
-    const handleSaved = () => {
-        refresh();
-    };
+  const openEdit = (supplier) => {
+    setSelected(null);
+    setEditTarget(supplier);
+    setShowForm(true);
+  };
 
-    return (
-        <>
-            <style>{styles}</style>
-            <SupplierDrawer
-              supplier={selected}
-              onClose={() => setSelected(null)}
-              onEdit={openEdit}
-              onDeleted={refresh}
-              onToast={setToast}
-              t={t}
+  const handleSaved = () => {
+    refresh();
+  };
+
+  // Marking a restock order "Complete" is what actually pushes the ordered
+  // items into Inventory — the backend matches each item to an existing
+  // product (by name) and bumps its stock, or creates a new product if
+  // there's no match. After that we refresh both the restock list AND the
+  // suppliers/products data so stats (linked products, stock, etc.) reflect
+  // the new inventory immediately.
+  const handleCompleteRestock = async (order) => {
+  try {
+    await api(`/restock-orders/${order._id}/complete`, { method: "PUT" });
+    setToast("✅ Stock added to Inventory!");
+    refreshRestockOrders();
+    refresh();
+  } catch (e) {
+    setToast("❌ " + e.message);
+  }
+};
+
+  // Check-in popup handlers
+  const handleCheckinYes = async (order) => {
+    markAsked(order._id);
+    await handleCompleteRestock(order);
+  };
+  const handleCheckinNo = async (order, expectedDate) => {
+    try {
+      if (expectedDate) {
+        await api(`/restock-orders/${order._id}`, {
+          method: "PUT",
+          body: JSON.stringify({ expectedDate }),
+        });
+        refreshRestockOrders();
+        setToast("✅ Naya expected date save ho gaya, hum baad mein phir poochenge");
+      } else {
+        setToast("Theek hai, thodi der baad phir poochenge");
+      }
+    } catch (e) {
+      setToast("⚠️ Date save nahi hua, par reminder chalta rahega");
+    }
+    markAsked(order._id);
+  };
+  const handleCheckinDismiss = (order) => {
+    markAsked(order._id);
+  };
+
+ return (
+    <>
+        <style>{styles}</style>
+        {checkinOrder && (
+          <RestockCheckinModal
+            order={checkinOrder}
+            onYes={handleCheckinYes}
+            onNo={handleCheckinNo}
+            onDismiss={handleCheckinDismiss}
+            t={t}
+          />
+        )}
+        <SupplierDrawer
+          supplier={selected}
+          products={products}
+          allOrders={restockOrders}
+          onClose={() => setSelected(null)}
+          onEdit={openEdit}
+          onDeleted={refresh}
+          onToast={setToast}
+          onRestockOrderSaved={refreshRestockOrders}
+          t={t}
+        />
+        {showForm && (
+          <SupplierFormModal
+            initial={editTarget}
+            onClose={() => { setShowForm(false); setEditTarget(null); }}
+            onSaved={handleSaved}
+            onToast={setToast}
+            existingCategories={knownCategories}
+            t={t}
+          />
+        )}
+        {showAdHocRestock && (
+          <RestockAlertModal
+            supplier={null}
+            suppliers={suppliers}
+            products={products}
+            allOrders={restockOrders}
+            onClose={() => setShowAdHocRestock(false)}
+            onToast={setToast}
+            onOrderSaved={refreshRestockOrders}
+            t={t}
+          />
+        )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+
+        {/* Header */}
+        <div style={{
+          display: "flex", alignItems: "flex-end", justifyContent: "space-between",
+          flexWrap: "wrap", gap: "12px",
+        }}>
+          <div>
+            <h1 style={{
+              fontFamily: "'Syne', sans-serif",
+              fontSize: "clamp(22px, 6vw, 28px)",
+              fontWeight: 900, color: t.textPrimary,
+              letterSpacing: "-0.03em", margin: 0,
+              transition: "color 0.25s ease",
+            }}>
+              Suppliers
+            </h1>
+            <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
+              {error ? error : "Manage your vendor relationships"}
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button
+              onClick={() => setShowAdHocRestock(true)}
+              style={{
+                padding: "10px 18px", borderRadius: "10px",
+                background: t.green, color: "#fff", border: "none",
+                fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
+                cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
+                touchAction: "manipulation", whiteSpace: "nowrap",
+              }}>
+              <Icon id="whatsapp" size={14} /> Restock Alert
+            </button>
+            <button
+              onClick={() => { setEditTarget(null); setShowForm(true); }}
+              style={{
+                padding: "10px 18px", borderRadius: "10px",
+                background: t.accent, color: "#fff", border: "none",
+                fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
+                cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
+                touchAction: "manipulation", whiteSpace: "nowrap",
+              }}>
+              <Icon id="plus" size={14} /> Add Supplier
+            </button>
+          </div>
+        </div>
+
+        {/* KPI Row */}
+        <div className="sup-kpi-grid">
+          <SummaryKpi label="Total Suppliers" value={suppliers.length} sub={`${activeCount} active`} trendDir="up" loading={loading} t={t} />
+          <SummaryKpi label="Total Invested" value={inr(totalInvested)} sub="goods purchased so far" trendDir="up" loading={loading} t={t} />
+          <SummaryKpi label="Pending Payments" value={inr(totalPending)} sub={totalPending > 0 ? "still owed to suppliers" : "all clear"} trendDir={totalPending > 0 ? "down" : "up"} loading={loading} t={t} />
+          <SummaryKpi label="Avg. Rating" value={`${avgRating} ★`} sub="across rated suppliers" trendDir="neu" loading={loading} t={t} />
+        </div>
+
+        {/* Pending Restocks — the missing link: click Mark Complete here
+                    and those exact items land in Inventory as stock */}
+        <PendingRestocksCard
+          orders={restockOrders}
+          loading={restockLoading}
+          error={restockError}
+          onComplete={handleCompleteRestock}
+          t={t}
+        />
+
+        {/* Filters */}
+        <div
+          className="sup-filter-box ui-card"
+          style={{
+            borderRadius: "16px",
+            background: t.bgCard,
+            border: `1px solid ${t.border}`,
+            padding: "14px",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "10px",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ position: "relative", flex: "1 1 80px", minWidth: 0 }}>
+            <span style={{
+              position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)",
+              color: t.textMuted, display: "flex", pointerEvents: "none",
+            }}><Icon id="search" size={14} /></span>
+            <input
+              className="ui-input"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search suppliers…"
+              style={{
+                width: "100%",
+                padding: "9px 12px 9px 32px",
+                borderRadius: "10px",
+                background: `${t.accent}08`,
+                border: `1px solid ${t.border}`,
+                color: t.textPrimary,
+                fontFamily: "'DM Sans', sans-serif",
+                outline: "none",
+                boxSizing: "border-box",
+                fontSize: "16px",
+                "--focus-ring": `${t.accent}33`,
+              }}
             />
-            {showForm && (
-              <SupplierFormModal
-                initial={editTarget}
-                onClose={() => { setShowForm(false); setEditTarget(null); }}
-                onSaved={handleSaved}
-                onToast={setToast}
-                existingCategories={knownCategories}
-                t={t}
-              />
-            )}
-            {showAdHocRestock && (
-              <RestockAlertModal
-                supplier={null}
-                onClose={() => setShowAdHocRestock(false)}
-                onToast={setToast}
-                t={t}
-              />
-            )}
+          </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-
-                {/* Header */}
-                <div style={{
-                    display: "flex", alignItems: "flex-end", justifyContent: "space-between",
-                    flexWrap: "wrap", gap: "12px",
-                }}>
-                    <div>
-                        <h1 style={{
-                            fontFamily: "'Syne', sans-serif",
-                            fontSize: "clamp(22px, 6vw, 28px)",
-                            fontWeight: 900, color: t.textPrimary,
-                            letterSpacing: "-0.03em", margin: 0,
-                            transition: "color 0.25s ease",
-                        }}>
-                            Suppliers
-                        </h1>
-                        <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px", marginBottom: 0 }}>
-                            {error ? error : "Manage your vendor relationships"}
-                        </p>
-                    </div>
-                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                        <button
-                            onClick={() => setShowAdHocRestock(true)}
-                            style={{
-                              padding: "10px 18px", borderRadius: "10px",
-                              background: t.green, color: "#fff", border: "none",
-                              fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
-                              cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
-                              touchAction: "manipulation", whiteSpace: "nowrap",
-                            }}>
-                            <Icon id="whatsapp" size={14} /> Restock Alert
-                        </button>
-                        <button
-                            onClick={() => { setEditTarget(null); setShowForm(true); }}
-                            style={{
-                              padding: "10px 18px", borderRadius: "10px",
-                              background: t.accent, color: "#fff", border: "none",
-                              fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: "13px",
-                              cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
-                              touchAction: "manipulation", whiteSpace: "nowrap",
-                            }}>
-                            <Icon id="plus" size={14} /> Add Supplier
-                        </button>
-                    </div>
-                </div>
-
-                {/* KPI Row */}
-                <div className="sup-kpi-grid">
-                    <SummaryKpi label="Total Suppliers" value={suppliers.length} sub={`${activeCount} active`} trendDir="up" loading={loading} t={t} />
-                    <SummaryKpi label="Total Invested"   value={inr(totalInvested)} sub="goods purchased so far" trendDir="up" loading={loading} t={t} />
-                    <SummaryKpi label="Pending Payments" value={inr(totalPending)} sub={totalPending > 0 ? "still owed to suppliers" : "all clear"} trendDir={totalPending > 0 ? "down" : "up"} loading={loading} t={t} />
-                    <SummaryKpi label="Avg. Rating"     value={`${avgRating} ★`}  sub="across rated suppliers" trendDir="neu" loading={loading} t={t} />
-                </div>
-
-                {/* Filters */}
-                <div
-                    className="sup-filter-box ui-card"
-                    style={{
-                        borderRadius: "16px",
-                        background: t.bgCard,
-                        border: `1px solid ${t.border}`,
-                        padding: "14px",
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: "10px",
-                        alignItems: "center",
-                    }}
+          <div className="sup-filter-group">
+            <span className="sup-filter-group-label" style={{ color: t.textMuted, fontFamily: "'DM Sans', sans-serif", display: "none" }}>
+              Category
+            </span>
+            <div className="sup-pill-row">
+              {categoryFilterOptions.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCatFilter(c)}
+                  style={{
+                    fontSize: "11px", fontWeight: 600,
+                    padding: "7px 12px", borderRadius: "99px",
+                    background: catFilter === c ? t.accent : `${t.accent}12`,
+                    color: catFilter === c ? "#fff" : t.accent,
+                    border: catFilter === c ? "none" : `1px solid ${t.accent}28`,
+                    cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+                    transition: "all 0.15s", touchAction: "manipulation",
+                    minHeight: "32px", whiteSpace: "nowrap", flexShrink: 0,
+                  }}
                 >
-                    <div style={{ position: "relative", flex: "1 1 80px", minWidth: 0 }}>
-                        <span style={{
-                            position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)",
-                            color: t.textMuted, display: "flex", pointerEvents: "none",
-                        }}><Icon id="search" size={14} /></span>
-                        <input
-                            className="ui-input"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Search suppliers…"
-                            style={{
-                                width: "100%",
-                                padding: "9px 12px 9px 32px",
-                                borderRadius: "10px",
-                                background: `${t.accent}08`,
-                                border: `1px solid ${t.border}`,
-                                color: t.textPrimary,
-                                fontFamily: "'DM Sans', sans-serif",
-                                outline: "none",
-                                boxSizing: "border-box",
-                                fontSize: "16px",
-                                "--focus-ring": `${t.accent}33`,
-                            }}
-                        />
-                    </div>
-
-                    <div className="sup-filter-group">
-                        <span className="sup-filter-group-label" style={{ color: t.textMuted, fontFamily: "'DM Sans', sans-serif", display: "none" }}>
-                            Category
-                        </span>
-                        <div className="sup-pill-row">
-                            {categoryFilterOptions.map((c) => (
-                                <button
-                                    key={c}
-                                    onClick={() => setCatFilter(c)}
-                                    style={{
-                                        fontSize: "11px", fontWeight: 600,
-                                        padding: "7px 12px", borderRadius: "99px",
-                                        background: catFilter === c ? t.accent : `${t.accent}12`,
-                                        color: catFilter === c ? "#fff" : t.accent,
-                                        border: catFilter === c ? "none" : `1px solid ${t.accent}28`,
-                                        cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
-                                        transition: "all 0.15s", touchAction: "manipulation",
-                                        minHeight: "32px", whiteSpace: "nowrap", flexShrink: 0,
-                                    }}
-                                >
-                                    {c}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="sup-filter-group">
-                        <span className="sup-filter-group-label" style={{ color: t.textMuted, fontFamily: "'DM Sans', sans-serif", display: "none" }}>
-                            Status
-                        </span>
-                        <div className="sup-pill-row">
-                            {STATUSES.map((s) => (
-                                <button
-                                    key={s}
-                                    onClick={() => setStatusFilter(s)}
-                                    style={{
-                                        fontSize: "11px", fontWeight: 600,
-                                        padding: "7px 12px", borderRadius: "99px",
-                                        background: statusFilter === s ? `${t.border}` : "transparent",
-                                        color: statusFilter === s ? t.textPrimary : t.textMuted,
-                                        border: `1px solid ${t.border}`,
-                                        cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
-                                        transition: "all 0.15s", touchAction: "manipulation",
-                                        minHeight: "32px", whiteSpace: "nowrap", flexShrink: 0,
-                                    }}
-                                >
-                                    {s}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <span
-                        className="sup-filter-count"
-                        style={{
-                            fontSize: "11px", color: t.textMuted,
-                            marginLeft: "auto", whiteSpace: "nowrap",
-                            fontFamily: "'DM Sans', sans-serif",
-                        }}
-                    >
-                        {loading ? "Loading…" : `${filtered.length} of ${suppliers.length} suppliers`}
-                    </span>
-                </div>
-
-                {/* ── Desktop Table ── */}
-                <div
-                    className="sup-table-wrap ui-card"
-                    style={{
-                        borderRadius: "16px",
-                        background: t.bgCard,
-                        border: `1px solid ${t.border}`,
-                        padding: "20px",
-                    }}
-                >
-                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "620px" }}>
-                        <thead>
-                            <tr style={{ borderBottom: `1px solid ${t.border}` }}>
-                                {["Supplier", "Category", "Contact", "Invested", "Pending", "Rating", "Status", ""].map((h, i) => (
-                                    <th
-                                        key={i}
-                                        style={{
-                                            textAlign: "left", paddingBottom: "12px",
-                                            fontSize: "10px", fontWeight: 600,
-                                            textTransform: "uppercase", letterSpacing: "0.08em",
-                                            color: t.textMuted, fontFamily: "'DM Sans', sans-serif",
-                                            paddingRight: i < 7 ? "8px" : "0",
-                                            whiteSpace: "nowrap",
-                                        }}
-                                    >
-                                        {h}
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                Array.from({ length: 5 }).map((_, i) => (
-                                    <SkeletonRow key={i} t={t} isLast={i === 4} />
-                                ))
-                            ) : filtered.length > 0 ? (
-                                filtered.map((s, i) => (
-                                    <SupplierRow
-                                        key={s._id || s.id}
-                                        supplier={s}
-                                        onClick={setSelected}
-                                        t={t}
-                                        isLast={i === filtered.length - 1}
-                                    />
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan={8} style={{ padding: "48px 0", textAlign: "center" }}>
-                                        <div style={{ display: "flex", justifyContent: "center", color: t.textMuted, marginBottom: 8 }}>
-                                            <Icon id="search" size={30} />
-                                        </div>
-                                        <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "16px", color: t.textPrimary, margin: 0 }}>No suppliers found</p>
-                                        <p style={{ fontSize: "12px", color: t.textMuted, margin: "4px 0 0" }}>Try adjusting your search or filters, or add your first supplier</p>
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* ── Mobile Cards ── */}
-                <div className="sup-cards">
-                    {loading ? (
-                        Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} t={t} />)
-                    ) : filtered.length > 0 ? (
-                        filtered.map((s) => (
-                            <SupplierCard key={s._id || s.id} supplier={s} onClick={setSelected} t={t} />
-                        ))
-                    ) : (
-                        <div style={{
-                            padding: "48px 20px", textAlign: "center",
-                            borderRadius: "16px", background: t.bgCard, border: `1px solid ${t.border}`,
-                        }}>
-                            <div style={{ display: "flex", justifyContent: "center", color: t.textMuted, marginBottom: 8 }}>
-                                <Icon id="search" size={30} />
-                            </div>
-                            <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "16px", color: t.textPrimary, margin: 0 }}>No suppliers found</p>
-                            <p style={{ fontSize: "12px", color: t.textMuted, margin: "4px 0 0" }}>Try adjusting your search or filters, or add your first supplier</p>
-                        </div>
-                    )}
-                </div>
-
+                  {c}
+                </button>
+              ))}
             </div>
+          </div>
 
-            <Toast message={toast} onDismiss={() => setToast("")} t={t} />
-        </>
-    );
+          <div className="sup-filter-group">
+            <span className="sup-filter-group-label" style={{ color: t.textMuted, fontFamily: "'DM Sans', sans-serif", display: "none" }}>
+              Status
+            </span>
+            <div className="sup-pill-row">
+              {STATUSES.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  style={{
+                    fontSize: "11px", fontWeight: 600,
+                    padding: "7px 12px", borderRadius: "99px",
+                    background: statusFilter === s ? `${t.border}` : "transparent",
+                    color: statusFilter === s ? t.textPrimary : t.textMuted,
+                    border: `1px solid ${t.border}`,
+                    cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+                    transition: "all 0.15s", touchAction: "manipulation",
+                    minHeight: "32px", whiteSpace: "nowrap", flexShrink: 0,
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <span
+            className="sup-filter-count"
+            style={{
+              fontSize: "11px", color: t.textMuted,
+              marginLeft: "auto", whiteSpace: "nowrap",
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            {loading ? "Loading…" : `${filtered.length} of ${suppliers.length} suppliers`}
+          </span>
+        </div>
+
+        {/* ── Desktop Table ── */}
+        <div
+          className="sup-table-wrap ui-card"
+          style={{
+            borderRadius: "16px",
+            background: t.bgCard,
+            border: `1px solid ${t.border}`,
+            padding: "20px",
+          }}
+        >
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "620px" }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${t.border}` }}>
+                {["Supplier", "Category", "Contact", "Invested", "Pending", "Rating", "Status", ""].map((h, i) => (
+                  <th
+                    key={i}
+                    style={{
+                      textAlign: "left", paddingBottom: "12px",
+                      fontSize: "10px", fontWeight: 600,
+                      textTransform: "uppercase", letterSpacing: "0.08em",
+                      color: t.textMuted, fontFamily: "'DM Sans', sans-serif",
+                      paddingRight: i < 7 ? "8px" : "0",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <SkeletonRow key={i} t={t} isLast={i === 4} />
+                ))
+              ) : filtered.length > 0 ? (
+                filtered.map((s, i) => (
+                  <SupplierRow
+                    key={s._id || s.id}
+                    supplier={s}
+                    onClick={setSelected}
+                    t={t}
+                    isLast={i === filtered.length - 1}
+                  />
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={8} style={{ padding: "48px 0", textAlign: "center" }}>
+                    <div style={{ display: "flex", justifyContent: "center", color: t.textMuted, marginBottom: 8 }}>
+                      <Icon id="search" size={30} />
+                    </div>
+                    <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "16px", color: t.textPrimary, margin: 0 }}>No suppliers found</p>
+                    <p style={{ fontSize: "12px", color: t.textMuted, margin: "4px 0 0" }}>Try adjusting your search or filters, or add your first supplier</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── Mobile Cards ── */}
+        <div className="sup-cards">
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} t={t} />)
+          ) : filtered.length > 0 ? (
+            filtered.map((s) => (
+              <SupplierCard key={s._id || s.id} supplier={s} onClick={setSelected} t={t} />
+            ))
+          ) : (
+            <div style={{
+              padding: "48px 20px", textAlign: "center",
+              borderRadius: "16px", background: t.bgCard, border: `1px solid ${t.border}`,
+            }}>
+              <div style={{ display: "flex", justifyContent: "center", color: t.textMuted, marginBottom: 8 }}>
+                <Icon id="search" size={30} />
+              </div>
+              <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "16px", color: t.textPrimary, margin: 0 }}>No suppliers found</p>
+              <p style={{ fontSize: "12px", color: t.textMuted, margin: "4px 0 0" }}>Try adjusting your search or filters, or add your first supplier</p>
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      <Toast message={toast} onDismiss={() => setToast("")} t={t} />
+    </>
+  );
 }

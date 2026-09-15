@@ -55,6 +55,10 @@ function StatCard({ label, value, trend, trendDir, sub }) {
 }
 
 // ─── ADD PRODUCT MODAL ─────────────────────────────────────────────────────
+// Voice add is now INSIDE this modal (top section) instead of sitting as a
+// separate button next to "+ Add Product" in the page header. Using voice
+// still calls the same onAdded()+onClose() flow as a manual save, so the
+// list refreshes and the modal closes either way.
 function AddProductModal({ onClose, onAdded, t, existingProducts, categorySuggestions }) {
   const api = useApi();
   const [form, setForm] = useState({ productId: "", name: "", category: "", stock: "", price: "", growthPercent: "0" });
@@ -69,11 +73,23 @@ function AddProductModal({ onClose, onAdded, t, existingProducts, categorySugges
       return setErr("Product ID, Name, Category, Stock and Price is mandatory");
     }
 
+    // Duplicate NAME check (existing)
     const dupe = existingProducts.find(
       (p) => p.name.trim().toLowerCase() === form.name.trim().toLowerCase()
     );
     if (dupe) {
       return setErr(`"${form.name}" already exists (SKU: ${dupe.productId}). Edit it instead using the ✎ button.`);
+    }
+
+    // Duplicate SKU / Product ID check — this is the most common reason a
+    // save silently fails on the backend (unique-index conflict on
+    // productId), which used to just show a generic "Failed to save
+    // product". Catching it here gives a clear, actionable message instead.
+    const dupeId = existingProducts.find(
+      (p) => p.productId.trim().toLowerCase() === form.productId.trim().toLowerCase()
+    );
+    if (dupeId) {
+      return setErr(`SKU "${form.productId}" is already used by "${dupeId.name}". Pick a different Product ID.`);
     }
 
     setSaving(true);
@@ -92,10 +108,20 @@ function AddProductModal({ onClose, onAdded, t, existingProducts, categorySugges
       onAdded();
       onClose();
     } catch (e) {
-      setErr(e.message);
+      // Surface whatever the backend actually said (instead of a generic
+      // "Failed to save product") so the real cause is visible.
+      setErr(e?.message || "Failed to save product — check console/network tab for details");
     } finally {
       setSaving(false);
     }
+  };
+
+  // Fired by VoiceAddProduct once it has already saved the product on the
+  // backend itself — we just need to refresh the list and close the modal,
+  // same as a successful manual submit.
+  const handleVoiceAdded = () => {
+    onAdded();
+    onClose();
   };
 
   const inputStyle = {
@@ -114,6 +140,23 @@ function AddProductModal({ onClose, onAdded, t, existingProducts, categorySugges
         padding: 24, width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 12,
       }}>
         <h3 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 18, color: t.textPrimary, margin: 0 }}>Add Product</h3>
+
+        {/* ── Voice add — speak the product details instead of typing ── */}
+        <div style={{
+          border: `1px dashed ${t.accent}55`, borderRadius: 12, padding: "12px",
+          background: `${t.accent}08`, display: "flex", flexDirection: "column", gap: 8,
+        }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: t.textMuted, margin: 0 }}>
+            🎤 Bol ke bhi add kar sakte ho
+          </p>
+          <VoiceAddProduct onProductAdded={handleVoiceAdded} />
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "2px 0" }}>
+          <div style={{ flex: 1, height: 1, background: t.border }} />
+          <span style={{ fontSize: 10, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>ya manually bharo</span>
+          <div style={{ flex: 1, height: 1, background: t.border }} />
+        </div>
 
         <div>
           <label style={{ fontSize: 11, color: t.textMuted }}>Product ID / SKU</label>
@@ -214,7 +257,7 @@ function EditProductModal({ product, onClose, onSaved, t, existingProducts, cate
       onSaved();
       onClose();
     } catch (e) {
-      setErr(e.message);
+      setErr(e?.message || "Failed to update product");
     } finally {
       setSaving(false);
     }
@@ -421,7 +464,7 @@ export default function Inventory() {
             <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: "28px", fontWeight: 900, color: t.textPrimary, letterSpacing: "-0.03em" }}>Inventory</h1>
             <p style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>Manage your product stock, SKUs, and availability</p>
           </div>
-          <VoiceAddProduct onProductAdded={loadProducts} />
+          {/* VoiceAddProduct moved inside the Add Product modal — see AddProductModal above */}
           <button onClick={() => setShowAdd(true)} style={{
             background: t.accent, color: "#fff", border: "none", borderRadius: 10,
             padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
