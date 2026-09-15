@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
+import useApi from "../hooks/useApi"; // adjust this path to wherever useApi.js actually lives in your project
 
 // ─── PLAN DATA ────────────────────────────────────────────────────────────────
 const PLANS = [
@@ -107,6 +108,26 @@ const styles = `
   }
 `;
 
+// ─── LOAD CASHFREE SDK ONCE ───────────────────────────────────────────────
+function useCashfreeSdk() {
+  const [ready, setReady] = useState(!!window.Cashfree);
+
+  useEffect(() => {
+    if (window.Cashfree) {
+      setReady(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
+    script.async = true;
+    script.onload = () => setReady(true);
+    document.body.appendChild(script);
+    // no cleanup removal — SDK is fine to persist across the app
+  }, []);
+
+  return ready;
+}
+
 // ─── STAT CARD ────────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color }) {
   const { t } = useTheme();
@@ -153,10 +174,11 @@ function Check({ included, color }) {
 }
 
 // ─── PLAN CARD ────────────────────────────────────────────────────────────────
-function PlanCard({ plan, billing, isCurrent }) {
+function PlanCard({ plan, billing, isCurrent, onUpgrade, loadingPlanId, sdkReady }) {
   const { t } = useTheme();
   const price = billing === "monthly" ? plan.monthlyPrice : plan.yearlyPrice;
   const savings = Math.round(((plan.monthlyPrice - plan.yearlyPrice) / plan.monthlyPrice) * 100);
+  const isLoading = loadingPlanId === plan.id;
 
   return (
     <div
@@ -247,6 +269,8 @@ function PlanCard({ plan, billing, isCurrent }) {
 
       {/* CTA Button */}
       <button
+        disabled={isCurrent || isLoading || !sdkReady}
+        onClick={() => !isCurrent && onUpgrade(plan)}
         style={{
           width: "100%",
           padding: "11px",
@@ -268,11 +292,16 @@ function PlanCard({ plan, billing, isCurrent }) {
           marginBottom: "24px",
           transition: "opacity 0.15s ease",
           letterSpacing: "0.01em",
+          opacity: isLoading || !sdkReady ? 0.7 : 1,
         }}
         onMouseEnter={e => { if (!isCurrent) e.currentTarget.style.opacity = "0.85"; }}
-        onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
+        onMouseLeave={e => { e.currentTarget.style.opacity = isLoading || !sdkReady ? "0.7" : "1"; }}
       >
-        {isCurrent ? "✓ Current Plan" : plan.id === "starter" ? "Downgrade" : "Upgrade Now"}
+        {isCurrent
+          ? "✓ Current Plan"
+          : isLoading
+          ? "Redirecting..."
+          : plan.id === "starter" ? "Downgrade" : "Upgrade Now"}
       </button>
 
       {/* Divider */}
@@ -363,6 +392,49 @@ const BILLING_ROWS = [
 export default function Subscription() {
   const { t } = useTheme();
   const [billing, setBilling] = useState("monthly");
+  const [loadingPlanId, setLoadingPlanId] = useState(null);
+  const [error, setError] = useState(null);
+  const sdkReady = useCashfreeSdk();
+  const callApi = useApi();
+
+  // Replace this with your real logged-in user's info (from AuthContext,
+  // or wherever the shop's owner/customer details live in your app)
+  const currentUser = {
+    id: "cust_demo_1",
+    phone: "9999999999",
+    email: "test@example.com",
+  };
+
+  async function handleUpgrade(plan) {
+    setError(null);
+    setLoadingPlanId(plan.id);
+    try {
+      // useApi already prefixes with BACKEND + "/api" and attaches the
+      // auth token, so this hits /api/payments/create-order for you.
+      const data = await callApi("/payments/create-order", {
+        method: "POST",
+        body: JSON.stringify({
+          amount: billing === "yearly" ? plan.yearlyPrice : plan.monthlyPrice,
+          customerId: currentUser.id,
+          phone: currentUser.phone,
+          email: currentUser.email,
+          note: `${plan.id}-${billing}`,
+        }),
+      });
+
+      const cashfree = window.Cashfree({ mode: "sandbox" }); // change to "production" when live
+      cashfree.checkout({
+        paymentSessionId: data.payment_session_id,
+        redirectTarget: "_self",
+      });
+      // Note: on success/failure Cashfree redirects to return_url configured
+      // on the backend, so execution here effectively ends with the redirect.
+    } catch (err) {
+      console.error(err);
+      setError("Something went wrong starting the payment. Please try again.");
+      setLoadingPlanId(null);
+    }
+  }
 
   return (
     <>
@@ -382,6 +454,20 @@ export default function Subscription() {
             Manage your plan, billing, and usage
           </p>
         </div>
+
+        {error && (
+          <div style={{
+            background: "#ef444415",
+            border: "1px solid #ef444460",
+            color: "#ef4444",
+            borderRadius: "10px",
+            padding: "12px 16px",
+            fontSize: "13px",
+            fontFamily: "'DM Sans',sans-serif",
+          }}>
+            {error}
+          </div>
+        )}
 
         {/* Current Plan Stats — 4 cols desktop, 2 cols mobile */}
         <div className="stats-grid">
@@ -451,6 +537,9 @@ export default function Subscription() {
                 plan={plan}
                 billing={billing}
                 isCurrent={plan.id === CURRENT_PLAN}
+                onUpgrade={handleUpgrade}
+                loadingPlanId={loadingPlanId}
+                sdkReady={sdkReady}
               />
             ))}
           </div>
