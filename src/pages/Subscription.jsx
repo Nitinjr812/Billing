@@ -8,7 +8,7 @@ const PLANS = [
     id: "starter",
     name: "Starter",
     tagline: "Perfect for small businesses",
-    monthlyPrice: 499,
+    monthlyPrice: 1,
     yearlyPrice: 399,
     color: "#6366f1",
     colorBg: "#6366f115",
