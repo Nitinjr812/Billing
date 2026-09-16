@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "../components/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 import useApi from "../hooks/useApi"; // adjust this path to wherever useApi.js actually lives in your project
 
 // ─── PLAN DATA ────────────────────────────────────────────────────────────────
@@ -8,7 +9,7 @@ const PLANS = [
     id: "starter",
     name: "Starter",
     tagline: "Perfect for small businesses",
-    monthlyPrice: 1,
+    monthlyPrice: 1, // ⚠️ looks like a test value — replace with the real starter price
     yearlyPrice: 399,
     color: "#6366f1",
     colorBg: "#6366f115",
@@ -69,7 +70,8 @@ const PLANS = [
   },
 ];
 
-const CURRENT_PLAN = "pro";
+// Backend Shop.subscription.plan enum ("free"|"pro"|"premium") → frontend plan id
+const BACKEND_TO_PLAN_ID = { free: "starter", pro: "pro", premium: "enterprise" };
 
 // ─── RESPONSIVE STYLES ────────────────────────────────────────────────────────
 const styles = `
@@ -379,47 +381,80 @@ function FaqItem({ q, a }) {
   );
 }
 
-// ─── BILLING HISTORY ROWS ─────────────────────────────────────────────────────
-const BILLING_ROWS = [
-  { id: "#SUB-0012", plan: "Pro",     date: "01 May 2025", amount: "₹1,299", status: "Paid" },
-  { id: "#SUB-0011", plan: "Pro",     date: "01 Apr 2025", amount: "₹1,299", status: "Paid" },
-  { id: "#SUB-0010", plan: "Pro",     date: "01 Mar 2025", amount: "₹1,299", status: "Paid" },
-  { id: "#SUB-0009", plan: "Starter", date: "01 Feb 2025", amount: "₹499",   status: "Paid" },
-  { id: "#SUB-0008", plan: "Starter", date: "01 Jan 2025", amount: "₹499",   status: "Paid" },
-];
-
 // ─── SUBSCRIPTION PAGE ────────────────────────────────────────────────────────
 export default function Subscription() {
   const { t } = useTheme();
+  const { user } = useAuth();
   const [billing, setBilling] = useState("monthly");
   const [loadingPlanId, setLoadingPlanId] = useState(null);
   const [error, setError] = useState(null);
+
+  // ── Real subscription data from the backend (replaces old dummy state) ──
+  const [subscription, setSubscription] = useState(null); // { plan, monthlyAmount, discountPercent, renewalHistory }
+  const [subLoading, setSubLoading] = useState(true);
+
   const sdkReady = useCashfreeSdk();
   const callApi = useApi();
 
-  // Replace this with your real logged-in user's info (from AuthContext,
-  // or wherever the shop's owner/customer details live in your app)
-  const currentUser = {
-    id: "cust_demo_1",
-    phone: "9999999999",
-    email: "test@example.com",
+  const fetchSubscription = async () => {
+    try {
+      const data = await callApi("/settings/subscription");
+      setSubscription(data);
+    } catch (err) {
+      console.error("Failed to load subscription:", err);
+      setError("Could not load your subscription details.");
+    } finally {
+      setSubLoading(false);
+    }
   };
+
+  useEffect(() => {
+    fetchSubscription();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── If we just came back from a Cashfree redirect (?order_id=...),
+  // re-check that order's status and refresh the subscription once the
+  // webhook has had a moment to land. ─────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get("order_id");
+    if (!orderId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await callApi(`/payments/order-status/${orderId}`);
+      } catch (err) {
+        console.error("Order status check failed:", err);
+      } finally {
+        // give the webhook a moment, then refresh regardless of the check above
+        setTimeout(() => {
+          if (!cancelled) fetchSubscription();
+        }, 2000);
+      }
+    })();
+
+    // clean the query param out of the URL so a refresh doesn't re-trigger this
+    window.history.replaceState({}, "", window.location.pathname);
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const currentPlanId = BACKEND_TO_PLAN_ID[subscription?.plan] || "starter";
+  const history = subscription?.renewalHistory || [];
+  const lastPayment = history.length > 0 ? history[history.length - 1] : null;
 
   async function handleUpgrade(plan) {
     setError(null);
     setLoadingPlanId(plan.id);
     try {
-      // useApi already prefixes with BACKEND + "/api" and attaches the
-      // auth token, so this hits /api/payments/create-order for you.
+      // Amount is computed server-side from planId+billing — we never send
+      // the price from the client, so it can't be tampered with.
       const data = await callApi("/payments/create-order", {
         method: "POST",
-        body: JSON.stringify({
-          amount: billing === "yearly" ? plan.yearlyPrice : plan.monthlyPrice,
-          customerId: currentUser.id,
-          phone: currentUser.phone,
-          email: currentUser.email,
-          note: `${plan.id}-${billing}`,
-        }),
+        body: JSON.stringify({ planId: plan.id, billing }),
       });
 
       const cashfree = window.Cashfree({ mode: "sandbox" }); // change to "production" when live
@@ -469,12 +504,29 @@ export default function Subscription() {
           </div>
         )}
 
-        {/* Current Plan Stats — 4 cols desktop, 2 cols mobile */}
+        {/* Current Plan Stats */}
         <div className="stats-grid">
-          <StatCard label="Current Plan"     value="Pro"    sub="Active since Jan 2024"    color="#f97316" />
-          <StatCard label="Next Billing"     value="₹1,299" sub="Due on 1 Jun 2025"                       />
-          <StatCard label="Invoices Used"    value="842"    sub="of unlimited this month"                  />
-          <StatCard label="Active Customers" value="218"    sub="of unlimited"                             />
+          <StatCard
+            label="Current Plan"
+            value={subLoading ? "…" : PLANS.find(p => p.id === currentPlanId)?.name || "Free"}
+            sub={subscription?.discountPercent > 0 ? `${subscription.discountPercent}% discount applied` : "—"}
+            color="#f97316"
+          />
+          <StatCard
+            label="Monthly Amount"
+            value={subLoading ? "…" : `₹${(subscription?.monthlyAmount || 0).toLocaleString("en-IN")}`}
+            sub={lastPayment ? `Last paid ${new Date(lastPayment.date).toLocaleDateString("en-IN")}` : "No payments yet"}
+          />
+          <StatCard
+            label="Total Renewals"
+            value={subLoading ? "…" : history.length}
+            sub="Payments recorded"
+          />
+          <StatCard
+            label="Total Paid"
+            value={subLoading ? "…" : `₹${history.reduce((sum, r) => sum + (r.amount || 0), 0).toLocaleString("en-IN")}`}
+            sub="Lifetime"
+          />
         </div>
 
         {/* Billing Toggle + Plans */}
@@ -529,14 +581,14 @@ export default function Subscription() {
             </div>
           </div>
 
-          {/* Plan Cards — 3 cols desktop, 1 col mobile */}
+          {/* Plan Cards */}
           <div className="plans-grid">
             {PLANS.map((plan) => (
               <PlanCard
                 key={plan.id}
                 plan={plan}
                 billing={billing}
-                isCurrent={plan.id === CURRENT_PLAN}
+                isCurrent={plan.id === currentPlanId}
                 onUpgrade={handleUpgrade}
                 loadingPlanId={loadingPlanId}
                 sdkReady={sdkReady}
@@ -545,7 +597,7 @@ export default function Subscription() {
           </div>
         </div>
 
-        {/* Billing History */}
+        {/* Billing History — real data from subscription.renewalHistory */}
         <div style={{
           background: t.bgCard,
           border: `1px solid ${t.border}`,
@@ -569,74 +621,53 @@ export default function Subscription() {
                 Your recent invoices and payments
               </p>
             </div>
-            <button style={{
-              padding: "7px 14px",
-              borderRadius: "8px",
-              border: `1px solid ${t.border}`,
-              background: "transparent",
-              color: t.textMuted,
-              fontSize: "11px",
-              fontWeight: 600,
-              cursor: "pointer",
-              fontFamily: "'DM Sans',sans-serif",
-              whiteSpace: "nowrap",
-            }}>
-              Download All
-            </button>
           </div>
 
-          {/* Scrollable table on mobile */}
           <div className="billing-table-wrap">
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", minWidth: "480px" }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${t.border}` }}>
-                  {["Invoice", "Plan", "Date", "Amount", "Status", ""].map((h, i) => (
-                    <th key={i} style={{
-                      textAlign: "left",
-                      paddingBottom: "10px",
-                      fontSize: "10px",
-                      fontWeight: 600,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.08em",
-                      color: t.textMuted,
-                      fontFamily: "'DM Sans',sans-serif",
-                    }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {BILLING_ROWS.map((row, i) => (
-                  <tr key={row.id} style={{
-                    borderBottom: i < BILLING_ROWS.length - 1 ? `1px solid ${t.borderLight}` : "none",
-                  }}>
-                    <td style={{ padding: "11px 0", fontFamily: "monospace", fontSize: "11px", color: t.textMuted }}>{row.id}</td>
-                    <td style={{ padding: "11px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans',sans-serif" }}>{row.plan}</td>
-                    <td style={{ padding: "11px 0", fontSize: "11px", color: t.textMuted }}>{row.date}</td>
-                    <td style={{ padding: "11px 0", fontFamily: "'Syne',sans-serif", fontWeight: 700, color: t.textPrimary }}>{row.amount}</td>
-                    <td style={{ padding: "11px 0" }}>
-                      <span style={{
-                        fontSize: "10px", fontWeight: 600,
-                        padding: "3px 9px", borderRadius: "99px",
-                        color: t.green, background: t.greenBg,
-                      }}>{row.status}</span>
-                    </td>
-                    <td style={{ padding: "11px 0", textAlign: "right" }}>
-                      <button style={{
-                        background: "transparent",
-                        border: `1px solid ${t.border}`,
-                        borderRadius: "6px",
-                        padding: "4px 10px",
+            {subLoading ? (
+              <p style={{ fontSize: "12px", color: t.textMuted, padding: "12px 0" }}>Loading billing history…</p>
+            ) : history.length === 0 ? (
+              <p style={{ fontSize: "12px", color: t.textMuted, padding: "12px 0" }}>No payments recorded yet.</p>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", minWidth: "420px" }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${t.border}` }}>
+                    {["Invoice", "Plan", "Date", "Amount"].map((h, i) => (
+                      <th key={i} style={{
+                        textAlign: "left",
+                        paddingBottom: "10px",
                         fontSize: "10px",
                         fontWeight: 600,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
                         color: t.textMuted,
-                        cursor: "pointer",
                         fontFamily: "'DM Sans',sans-serif",
-                      }}>PDF</button>
-                    </td>
+                      }}>{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {[...history].reverse().map((row, i, arr) => (
+                    <tr key={row.orderId || i} style={{
+                      borderBottom: i < arr.length - 1 ? `1px solid ${t.borderLight}` : "none",
+                    }}>
+                      <td style={{ padding: "11px 0", fontFamily: "monospace", fontSize: "11px", color: t.textMuted }}>
+                        {row.orderId ? `#${row.orderId.slice(-10)}` : `#SUB-${String(arr.length - i).padStart(4, "0")}`}
+                      </td>
+                      <td style={{ padding: "11px 0", fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans',sans-serif", textTransform: "capitalize" }}>
+                        {BACKEND_TO_PLAN_ID[row.plan] || row.plan}
+                      </td>
+                      <td style={{ padding: "11px 0", fontSize: "11px", color: t.textMuted }}>
+                        {new Date(row.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                      </td>
+                      <td style={{ padding: "11px 0", fontFamily: "'Syne',sans-serif", fontWeight: 700, color: t.textPrimary }}>
+                        ₹{row.amount.toLocaleString("en-IN")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 

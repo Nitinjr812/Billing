@@ -2,14 +2,17 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSuperAdminAuth } from "../context/SuperAdminAuthContext";
 import { useSuperAdminUI } from "../context/SuperAdminUIContext";
+import { useTheme } from "../components/ThemeContext";
 import SuperAdminShopModal from "./SuperAdminShopModal";
 
 const ICONS = {
   shop: <path d="M4 10.5V20h16v-9.5M2 10.5l1.5-6h17l1.5 6M2 10.5a2.5 2.5 0 0 0 5 0M7 10.5a2.5 2.5 0 0 0 5 0M12 10.5a2.5 2.5 0 0 0 5 0M17 10.5a2.5 2.5 0 0 0 5 0" />,
   revenue: <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />,
-  trend: <path d="M23 6l-9.5 9.5-5-5L1 18M17 6h6v6" />,
   crown: <path d="M2 20h20M3 8l4 4 5-8 5 8 4-4-2 12H5L3 8z" />,
   search: <><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></>,
+  power: <><path d="M12 2v10" /><path d="M18.4 6.6a9 9 0 1 1-12.8 0" /></>,
+  trash: <><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6" /></>,
+  logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></>,
 };
 
 function Icon({ name, size = 16, color = "currentColor" }) {
@@ -20,9 +23,56 @@ function Icon({ name, size = 16, color = "currentColor" }) {
   );
 }
 
+// ─── RESPONSIVE STYLES (structure only — colors stay inline via theme tokens) ──
+const styles = `
+  .sa-page { padding: 20px 16px 40px; min-height: 100vh; }
+  .sa-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+  .sa-hero-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 14px; }
+  .sa-plans-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  .sa-loyal-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 10px 12px; }
+  .sa-shop-row { display: flex; align-items: center; gap: 16px; padding: 14px 16px; flex-wrap: wrap; }
+  .sa-shop-main { flex: 1 1 220px; min-width: 0; cursor: pointer; }
+  .sa-shop-actions { display: flex; gap: 8px; flex-shrink: 0; width: 100%; }
+  .sa-shop-actions button { flex: 1; }
+
+  @media (min-width: 640px) {
+    .sa-page { padding: 28px 28px 50px; }
+    .sa-shop-actions { width: auto; }
+    .sa-shop-actions button { flex: none; }
+  }
+
+  @media (min-width: 800px) {
+    .sa-hero-grid { grid-template-columns: 1.3fr 1fr; }
+    .sa-shop-row { flex-wrap: nowrap; }
+  }
+
+  @media (min-width: 1024px) {
+    .sa-page { padding: 32px 32px 60px; }
+  }
+
+  .sa-card { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
+  .sa-card:hover { transform: translateY(-2px); }
+  .sa-row:hover { filter: brightness(1.06); }
+  .sa-btn { transition: all 0.15s ease; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .sa-btn:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
+  .sa-loyal-chip { transition: transform 0.15s ease, filter 0.15s ease; }
+  .sa-loyal-chip:hover { transform: translateX(3px); filter: brightness(1.08); }
+
+  @keyframes sa-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .sa-fade-in { animation: sa-fade-up 0.4s cubic-bezier(0.16,1,0.3,1) both; }
+
+  @keyframes sa-pulse { 0% { box-shadow: 0 0 0 0 currentColor; opacity: 1; } 70% { box-shadow: 0 0 0 6px transparent; opacity: 0.7; } 100% { box-shadow: 0 0 0 0 transparent; opacity: 1; } }
+  .sa-pulse-dot { animation: sa-pulse 1.8s ease infinite; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sa-fade-in, .sa-card:hover, .sa-pulse-dot { animation: none !important; transform: none !important; }
+  }
+`;
+
 export default function SuperAdminDashboard() {
   const { api, admin, logout } = useSuperAdminAuth();
   const { toast, confirmAction, promptInput } = useSuperAdminUI();
+  const { t } = useTheme();
   const navigate = useNavigate();
   const [shops, setShops] = useState(null);
   const [analytics, setAnalytics] = useState(null);
@@ -46,7 +96,7 @@ export default function SuperAdminDashboard() {
     if (nextStatus === "suspended") {
       const result = await promptInput({
         title: `Suspend "${shop.shopName}"?`,
-        description: "Yeh shop ke owner aur staff ko access se rok dega.",
+        description: "This will block the shop's owner and staff from accessing it.",
         confirmLabel: "Suspend Shop",
         fields: [{ key: "reason", label: "Reason (optional)", placeholder: "e.g. payment overdue" }],
       });
@@ -55,7 +105,7 @@ export default function SuperAdminDashboard() {
     } else {
       const ok = await confirmAction({
         title: `Activate "${shop.shopName}"?`,
-        message: "Shop wapas se accessible ho jayegi owner/staff ke liye.",
+        message: "The shop will become accessible again for its owner and staff.",
         confirmLabel: "Activate",
       });
       if (!ok) return;
@@ -72,7 +122,7 @@ export default function SuperAdminDashboard() {
   const handleDelete = async (shop) => {
     const ok = await confirmAction({
       title: `Delete "${shop.shopName}"?`,
-      message: `Yeh permanent hai — shop ke saath ${shop.totalUsers} users bhi delete ho jayenge. Wapas nahi aayega.`,
+      message: `This is permanent — along with the shop, ${shop.totalUsers} users will also be deleted. This cannot be undone.`,
       confirmLabel: "Delete Permanently",
       danger: true,
     });
@@ -100,135 +150,175 @@ export default function SuperAdminDashboard() {
   );
 
   const profit = analytics ? analytics.mrr - monthlyCost : 0;
+  const isProfit = profit >= 0;
+  const gradient = `linear-gradient(135deg, ${t.accent}, ${t.accentLight})`;
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "radial-gradient(1200px 600px at 10% -10%, rgba(99,102,241,0.12), transparent), radial-gradient(1000px 500px at 100% 0%, rgba(139,92,246,0.10), transparent), #08080c",
-      fontFamily: "'DM Sans', sans-serif", color: "#fff", padding: "32px 32px 60px",
-    }}>
-      <style>{`
-        @keyframes sa-fade-up { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
-        .sa-card { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
-        .sa-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.16); box-shadow: 0 12px 32px rgba(0,0,0,0.35); }
-        .sa-row:hover { background: rgba(255,255,255,0.025) !important; }
-        .sa-btn { transition: all 0.15s ease; }
-        .sa-btn:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
-        .sa-scan::-webkit-scrollbar { height: 4px; width: 4px; }
-        .sa-scan::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
-      `}</style>
+    <div
+      className="sa-page"
+      style={{
+        background: `radial-gradient(1000px 480px at 15% -10%, ${t.accent}14, transparent), radial-gradient(800px 420px at 100% 0%, ${t.accentLight}0d, transparent), ${t.bgPage}`,
+        fontFamily: "'DM Sans', sans-serif",
+        color: t.textPrimary,
+      }}
+    >
+      <style>{styles}</style>
 
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, animation: "sa-fade-up 0.4s ease" }}>
+      <div className="sa-header sa-fade-in">
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
             <div style={{
-              width: 34, height: 34, borderRadius: 10,
-              background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              width: 38, height: 38, borderRadius: 12,
+              background: gradient,
               display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 0 20px rgba(99,102,241,0.4)",
+              boxShadow: `0 8px 20px ${t.accent}45`,
+              flexShrink: 0,
             }}>
-              <Icon name="crown" size={17} color="#fff" />
+              <Icon name="crown" size={18} color="#fff" />
             </div>
-            <h1 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 26, letterSpacing: "-0.02em" }}>
-              Super Admin
-            </h1>
+            <div>
+              <h1 style={{
+                fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "clamp(20px, 5vw, 27px)",
+                letterSpacing: "-0.02em", margin: 0,
+                backgroundImage: gradient, WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent",
+              }}>
+                Command Center
+              </h1>
+              <p style={{ fontSize: 12, color: t.textMuted, margin: "2px 0 0" }}>Signed in as {admin?.email}</p>
+            </div>
           </div>
-          <p style={{ fontSize: 12.5, color: "#7a7a90", marginLeft: 44 }}>Logged in as {admin?.email}</p>
         </div>
         <button onClick={handleLogout} className="sa-btn" style={{
-          padding: "9px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)",
-          background: "rgba(255,255,255,0.03)", color: "#9999ad", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-        }}>Logout</button>
+          padding: "10px 18px", borderRadius: 12, border: `1px solid ${t.border}`,
+          background: t.bgCard, color: t.textMuted, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+        }}>
+          <Icon name="logout" size={14} /> Log out
+        </button>
       </div>
 
       {error && (
         <div style={{
-          padding: "10px 16px", borderRadius: 12, background: "rgba(248,113,113,0.08)",
-          border: "1px solid rgba(248,113,113,0.25)", color: "#f87171", fontSize: 13, marginBottom: 20,
+          padding: "10px 16px", borderRadius: 12, background: t.redBg,
+          border: `1px solid ${t.red}40`, color: t.red, fontSize: 13, marginBottom: 20,
         }}>{error}</div>
       )}
 
-      {/* Stat Cards */}
+      {/* ── Hero: profit is the number that matters most, everything else supports it ── */}
       {analytics && (
-        <div style={{
-          display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14, marginBottom: 20,
-          animation: "sa-fade-up 0.45s ease",
-        }}>
-          <StatCard icon="shop" label="Total Shops" value={analytics.totalShops}
-            sub={`${analytics.activeCount} active · ${analytics.suspendedCount} suspended`} />
-          <StatCard icon="revenue" label="Total Revenue Collected" value={`₹${analytics.totalRevenue.toLocaleString("en-IN")}`}
-            sub="All-time, from recorded payments" gradient="linear-gradient(135deg,#059669,#4ade80)" />
-          <StatCard icon="trend" label="Monthly Recurring Revenue" value={`₹${analytics.mrr.toLocaleString("en-IN")}`}
-            sub="Sum of active shops' plans" gradient="linear-gradient(135deg,#0891b2,#22d3ee)" />
-          <StatCard icon="trend" label="Estimated Profit / mo" value={`₹${profit.toLocaleString("en-IN")}`}
-            sub="MRR − your monthly cost" gradient={profit >= 0 ? "linear-gradient(135deg,#4f46e5,#8b5cf6)" : "linear-gradient(135deg,#b91c1c,#f87171)"} />
+        <div className="sa-hero-grid sa-fade-in">
+          {/* Profit hero card */}
+          <div className="sa-card" style={{
+            borderRadius: 22, padding: "28px 30px",
+            background: isProfit ? `linear-gradient(155deg, ${t.accent}16, ${t.bgCard} 65%)` : `linear-gradient(155deg, ${t.red}18, ${t.bgCard} 65%)`,
+            border: `1px solid ${isProfit ? `${t.accent}35` : `${t.red}35`}`,
+            boxShadow: `0 12px 32px -18px ${isProfit ? t.accent : t.red}70`,
+            display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 18,
+          }}>
+            <div>
+              <p style={{ fontSize: 12.5, color: t.textMuted, margin: 0, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Estimated profit this month</p>
+              <p style={{
+                fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: "clamp(32px, 6vw, 46px)",
+                letterSpacing: "-0.03em", margin: "8px 0 0",
+                color: isProfit ? t.textPrimary : t.red,
+              }}>
+                ₹{profit.toLocaleString("en-IN")}
+              </p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12.5, color: t.textMuted }}>
+              <span style={{ fontWeight: 600, color: t.textPrimary }}>₹{analytics.mrr.toLocaleString("en-IN")}</span>
+              <span>MRR</span>
+              <span style={{ opacity: 0.5 }}>−</span>
+              <span>running cost</span>
+              <input
+                type="number"
+                value={monthlyCost}
+                onChange={(e) => updateCost(Number(e.target.value))}
+                style={{
+                  width: 92, padding: "7px 10px", borderRadius: 9, border: `1px solid ${t.border}`,
+                  background: t.bgPage, color: t.textPrimary, fontSize: 12.5, outline: "none",
+                  transition: "border-color 0.15s ease",
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = t.accent; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = t.border; }}
+              />
+              <span style={{ opacity: 0.5 }}>/mo</span>
+            </div>
+          </div>
+
+          {/* Secondary stats — same rail, varied from the hero treatment */}
+          <div className="sa-card" style={{
+            borderRadius: 22, border: `1px solid ${t.border}`, background: t.bgCard,
+            display: "flex", flexDirection: "column", boxShadow: `0 10px 28px -20px ${t.textPrimary}30`,
+          }}>
+            <SecondaryStat icon="shop" label="Total shops" value={analytics.totalShops}
+              sub={`${analytics.activeCount} active, ${analytics.suspendedCount} suspended`} t={t} gradient={gradient} />
+            <div style={{ height: 1, background: t.borderLight }} />
+            <SecondaryStat icon="revenue" label="Total revenue collected" value={`₹${analytics.totalRevenue.toLocaleString("en-IN")}`}
+              sub="All-time, from recorded payments" t={t} gradient={gradient} />
+          </div>
         </div>
       )}
 
-      {/* Monthly cost + plan distribution row */}
-      <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap", animation: "sa-fade-up 0.5s ease" }}>
-        <div style={{
-          flex: "1 1 260px", padding: "14px 18px", borderRadius: 16,
-          background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
-          display: "flex", alignItems: "center", gap: 12,
-        }}>
-          <span style={{ fontSize: 12, color: "#8888a0", flexShrink: 0 }}>Monthly operating cost</span>
-          <input
-            type="number"
-            value={monthlyCost}
-            onChange={(e) => updateCost(Number(e.target.value))}
-            style={{
-              flex: 1, minWidth: 80, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)",
-              background: "rgba(0,0,0,0.3)", color: "#fff", fontSize: 12.5, outline: "none",
-            }}
-          />
+      {/* Plan distribution — inline chips instead of a third row of boxed cards */}
+      {analytics && (
+        <div className="sa-plans-row sa-fade-in">
+          <span style={{ fontSize: 11.5, color: t.textMuted, fontWeight: 600 }}>Plans</span>
+          {Object.entries(analytics.planCounts).map(([plan, count]) => (
+            <span key={plan} style={{
+              fontSize: 12, padding: "6px 14px", borderRadius: 99,
+              background: t.bgCard, border: `1px solid ${t.border}`,
+              color: t.textPrimary, textTransform: "capitalize", fontWeight: 500,
+            }}>
+              {plan} <strong style={{ color: t.accent, fontWeight: 800 }}>{count}</strong>
+            </span>
+          ))}
         </div>
-
-        {analytics && Object.entries(analytics.planCounts).map(([plan, count]) => (
-          <div key={plan} style={{
-            flex: "1 1 100px", padding: "14px 16px", borderRadius: 16,
-            background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
-          }}>
-            <p style={{ fontSize: 10.5, color: "#7a7a90", textTransform: "capitalize", letterSpacing: "0.04em" }}>{plan} plan</p>
-            <p style={{ fontSize: 20, fontWeight: 900, fontFamily: "'Syne', sans-serif", marginTop: 2 }}>{count}</p>
-          </div>
-        ))}
-      </div>
+      )}
 
       {/* Loyal shops */}
       {analytics && analytics.loyalShops.length > 0 && (
-        <div style={{
-          marginBottom: 20, padding: 18, borderRadius: 18,
-          background: "linear-gradient(135deg, rgba(251,191,36,0.08), rgba(251,191,36,0.02))",
-          border: "1px solid rgba(251,191,36,0.2)", animation: "sa-fade-up 0.55s ease",
+        <div className="sa-fade-in" style={{
+          marginBottom: 20, padding: "18px 20px", borderRadius: 18,
+          background: t.orangeBg, border: `1px solid ${t.orange}40`,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <Icon name="crown" size={15} color="#fbbf24" />
-            <p style={{ fontSize: 12.5, fontWeight: 700, color: "#fbbf24" }}>
-              Loyal Shops <span style={{ color: "#a8935a", fontWeight: 500 }}>· 3+ renewals, consider a discount</span>
+            <div style={{
+              width: 26, height: 26, borderRadius: 8, background: `${t.orange}20`,
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+              <Icon name="crown" size={13} color={t.orange} />
+            </div>
+            <p style={{ fontSize: 12.5, fontWeight: 700, color: t.orange, margin: 0 }}>
+              Loyal shops <span style={{ color: t.textMuted, fontWeight: 500 }}>— 3+ renewals, worth a discount</span>
             </p>
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {analytics.loyalShops.map((s) => (
               <button
                 key={s.shopId}
                 onClick={() => setOpenShopId(s.shopId)}
-                className="sa-btn"
+                className="sa-loyal-chip sa-loyal-row"
                 style={{
-                  padding: "7px 14px", borderRadius: 10, fontSize: 11.5, fontWeight: 600,
-                  background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)",
-                  color: "#fbbf24", cursor: "pointer",
+                  borderRadius: 10, textAlign: "left",
+                  background: t.bgCard, borderLeft: `3px solid ${t.orange}`,
+                  border: "none", borderLeftWidth: 3, borderLeftColor: t.orange,
+                  color: t.textPrimary, cursor: "pointer", fontSize: 12.5, fontWeight: 500,
                 }}
-              >{s.shopName} · {s.renewalCount}× renewed{s.discountPercent > 0 ? ` · ${s.discountPercent}% off` : ""}</button>
+              >
+                <span>{s.shopName}</span>
+                <span style={{ color: t.textMuted, fontWeight: 500 }}>
+                  {s.renewalCount}× renewed{s.discountPercent > 0 ? ` · ${s.discountPercent}% off applied` : ""}
+                </span>
+              </button>
             ))}
           </div>
         </div>
       )}
 
       {/* Search */}
-      <div style={{ position: "relative", marginBottom: 16, animation: "sa-fade-up 0.6s ease" }}>
-        <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#666680" }}>
+      <div className="sa-fade-in" style={{ position: "relative", marginBottom: 16 }}>
+        <div style={{ position: "absolute", left: 15, top: "50%", transform: "translateY(-50%)", color: t.textMuted }}>
           <Icon name="search" size={15} />
         </div>
         <input
@@ -237,84 +327,99 @@ export default function SuperAdminDashboard() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{
-            width: "100%", boxSizing: "border-box", padding: "11px 14px 11px 40px", borderRadius: 14,
-            border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.02)",
-            color: "#fff", fontSize: 13, outline: "none",
+            width: "100%", boxSizing: "border-box", padding: "12px 14px 12px 42px", borderRadius: 14,
+            border: `1px solid ${t.border}`, background: t.bgCard,
+            color: t.textPrimary, fontSize: 13, outline: "none", transition: "border-color 0.15s ease, box-shadow 0.15s ease",
+            boxShadow: `0 6px 20px -16px ${t.textPrimary}40`,
           }}
+          onFocus={(e) => { e.currentTarget.style.borderColor = t.accent; }}
+          onBlur={(e) => { e.currentTarget.style.borderColor = t.border; }}
         />
       </div>
 
       {/* Shops list */}
       {shops === null ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {[1,2,3].map((i) => (
-            <div key={i} style={{ height: 68, borderRadius: 16, background: "rgba(255,255,255,0.02)" }} />
+          {[1, 2, 3].map((i) => (
+            <div key={i} style={{ height: 68, borderRadius: 16, background: t.bgCard, border: `1px solid ${t.border}` }} />
           ))}
         </div>
       ) : filteredShops.length === 0 ? (
-        <p style={{ color: "#7a7a90", fontSize: 13, textAlign: "center", padding: "40px 0" }}>Koi shop nahi mili.</p>
+        <div style={{ textAlign: "center", padding: "48px 0" }}>
+          <p style={{ color: t.textPrimary, fontSize: 14, fontWeight: 600, margin: 0 }}>
+            {shops.length === 0 ? "No shops yet" : "No shops match your search"}
+          </p>
+          <p style={{ color: t.textMuted, fontSize: 12.5, marginTop: 6 }}>
+            {shops.length === 0 ? "New signups will show up here." : "Try a different name, email, or shop ID."}
+          </p>
+        </div>
       ) : (
-        <div style={{
-          border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, overflow: "hidden",
-          background: "rgba(255,255,255,0.015)", animation: "sa-fade-up 0.65s ease",
+        <div className="sa-fade-in" style={{
+          border: `1px solid ${t.border}`, borderRadius: 18, overflow: "hidden", background: t.bgCard,
+          boxShadow: `0 10px 28px -20px ${t.textPrimary}30`,
         }}>
           {filteredShops.map((shop, i) => (
             <div
               key={shop._id}
-              className="sa-row"
+              className="sa-row sa-shop-row"
               style={{
-                display: "flex", alignItems: "center", gap: 16, padding: "16px 20px",
-                borderBottom: i < filteredShops.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
-                transition: "background 0.15s ease",
+                borderBottom: i < filteredShops.length - 1 ? `1px solid ${t.borderLight}` : "none",
+                transition: "filter 0.15s ease",
               }}
             >
               <div style={{
-                width: 40, height: 40, borderRadius: 11, flexShrink: 0,
-                background: `linear-gradient(135deg, ${shop.status === "active" ? "#6366f1" : "#4b4b5a"}, ${shop.status === "active" ? "#8b5cf6" : "#2a2a35"})`,
+                width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+                background: shop.status === "active" ? gradient : t.border,
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 15, color: "#fff",
+                fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 15,
+                color: shop.status === "active" ? "#fff" : t.textMuted,
+                boxShadow: shop.status === "active" ? `0 6px 16px ${t.accent}40` : "none",
               }}>{shop.shopName.slice(0, 2).toUpperCase()}</div>
 
-              <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => setOpenShopId(shop.shopId)}>
-                <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14.5, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div className="sa-shop-main" onClick={() => setOpenShopId(shop.shopId)}>
+                <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14.5, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: 0, color: t.textPrimary }}>
                   {shop.shopName}
-                  <Pill color={shop.status === "active" ? "#4ade80" : "#f87171"} bg={shop.status === "active" ? "rgba(74,222,128,0.12)" : "rgba(248,113,113,0.12)"}>
-                    {shop.status.toUpperCase()}
-                  </Pill>
-                  <Pill color="#a5b4fc" bg="rgba(99,102,241,0.15)">{shop.plan}</Pill>
+                  <StatusDot active={shop.status === "active"} t={t} />
+                  <Pill color={t.accent} bg={`${t.accent}18`}>{shop.plan}</Pill>
                   {shop.renewalCount >= 3 && <span style={{ fontSize: 12 }}>⭐</span>}
                 </p>
-                <p style={{ fontSize: 11.5, color: "#7a7a90", marginTop: 5 }}>
+                <p style={{ fontSize: 11.5, color: t.textMuted, margin: "5px 0 0" }}>
                   {shop.shopId} · {shop.ownerName} ({shop.ownerEmail}) · {shop.totalUsers} users · ₹{shop.totalRevenue.toLocaleString("en-IN")} revenue
                 </p>
                 {shop.status === "suspended" && shop.suspendedReason && (
-                  <p style={{ fontSize: 11, color: "#f87171", marginTop: 3 }}>Reason: {shop.suspendedReason}</p>
+                  <p style={{ fontSize: 11, color: t.red, margin: "3px 0 0" }}>Reason: {shop.suspendedReason}</p>
                 )}
               </div>
 
-              <button
-                onClick={() => handleSuspend(shop)}
-                disabled={actionId === shop.shopId}
-                className="sa-btn"
-                style={{
-                  padding: "7px 16px", borderRadius: 10, fontSize: 11.5, fontWeight: 700,
-                  border: `1px solid ${shop.status === "active" ? "rgba(248,113,113,0.4)" : "rgba(74,222,128,0.4)"}`,
-                  color: shop.status === "active" ? "#f87171" : "#4ade80",
-                  background: shop.status === "active" ? "rgba(248,113,113,0.06)" : "rgba(74,222,128,0.06)",
-                  cursor: "pointer", opacity: actionId === shop.shopId ? 0.5 : 1, flexShrink: 0,
-                }}
-              >{shop.status === "active" ? "Suspend" : "Activate"}</button>
+              <div className="sa-shop-actions">
+                <button
+                  onClick={() => handleSuspend(shop)}
+                  disabled={actionId === shop.shopId}
+                  className="sa-btn"
+                  style={{
+                    padding: "8px 16px", borderRadius: 10, fontSize: 11.5, fontWeight: 700,
+                    border: `1px solid ${shop.status === "active" ? `${t.red}60` : `${t.green}60`}`,
+                    color: shop.status === "active" ? t.red : t.green,
+                    background: shop.status === "active" ? t.redBg : t.greenBg,
+                    cursor: "pointer", opacity: actionId === shop.shopId ? 0.5 : 1,
+                  }}
+                >
+                  <Icon name="power" size={13} /> {shop.status === "active" ? "Suspend" : "Activate"}
+                </button>
 
-              <button
-                onClick={() => handleDelete(shop)}
-                disabled={actionId === shop.shopId}
-                className="sa-btn"
-                style={{
-                  padding: "7px 16px", borderRadius: 10, fontSize: 11.5, fontWeight: 700,
-                  border: "1px solid rgba(255,255,255,0.1)", color: "#8888a0", background: "transparent",
-                  cursor: "pointer", opacity: actionId === shop.shopId ? 0.5 : 1, flexShrink: 0,
-                }}
-              >Delete</button>
+                <button
+                  onClick={() => handleDelete(shop)}
+                  disabled={actionId === shop.shopId}
+                  className="sa-btn"
+                  style={{
+                    padding: "8px 16px", borderRadius: 10, fontSize: 11.5, fontWeight: 700,
+                    border: `1px solid ${t.border}`, color: t.textMuted, background: t.bgPage,
+                    cursor: "pointer", opacity: actionId === shop.shopId ? 0.5 : 1,
+                  }}
+                >
+                  <Icon name="trash" size={13} /> Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -336,21 +441,39 @@ function Pill({ children, color, bg }) {
   );
 }
 
-function StatCard({ icon, label, value, sub, gradient = "linear-gradient(135deg,#6366f1,#8b5cf6)" }) {
+function StatusDot({ active, t }) {
   return (
-    <div className="sa-card" style={{
-      padding: 18, borderRadius: 18, background: "rgba(255,255,255,0.02)",
-      border: "1px solid rgba(255,255,255,0.07)", position: "relative", overflow: "hidden",
-    }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 600, color: active ? t.green : t.red }}>
+      <span
+        className={active ? "sa-pulse-dot" : ""}
+        style={{
+          width: 6, height: 6, borderRadius: "50%",
+          background: active ? t.green : t.red,
+          boxShadow: active ? `0 0 6px ${t.green}90` : `0 0 6px ${t.red}80`,
+          color: active ? t.green : t.red,
+        }}
+      />
+      {active ? "Active" : "Suspended"}
+    </span>
+  );
+}
+
+function SecondaryStat({ icon, label, value, sub, t, gradient }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "20px 22px", flex: 1 }}>
       <div style={{
-        width: 34, height: 34, borderRadius: 10, background: gradient,
-        display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12,
+        width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+        background: gradient, opacity: 0.9,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        boxShadow: `0 6px 16px ${t.accent}35`,
       }}>
         <Icon name={icon} size={16} color="#fff" />
       </div>
-      <p style={{ fontSize: 11, color: "#8888a0", marginBottom: 4 }}>{label}</p>
-      <p style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Syne', sans-serif", letterSpacing: "-0.02em" }}>{value}</p>
-      {sub && <p style={{ fontSize: 10, color: "#6b6b80", marginTop: 5 }}>{sub}</p>}
+      <div style={{ minWidth: 0 }}>
+        <p style={{ fontSize: 11, color: t.textMuted, margin: 0, fontWeight: 500 }}>{label}</p>
+        <p style={{ fontSize: 19, fontWeight: 800, fontFamily: "'Syne', sans-serif", margin: "2px 0 0", letterSpacing: "-0.01em", color: t.textPrimary }}>{value}</p>
+        {sub && <p style={{ fontSize: 10, color: t.textMuted, margin: "2px 0 0" }}>{sub}</p>}
+      </div>
     </div>
   );
 }

@@ -1,254 +1,325 @@
 import { useState, useEffect } from "react";
 import { useSuperAdminAuth } from "../context/SuperAdminAuthContext";
 import { useSuperAdminUI } from "../context/SuperAdminUIContext";
+import { useTheme } from "../components/ThemeContext";
 
-const PLAN_AMOUNTS = { free: 0, pro: 999, premium: 2499 };
+const PLAN_DEFAULT_AMOUNTS = { free: 0, pro: 999, premium: 2499 };
+const PLANS = ["free", "pro", "premium"];
+const MSG_TYPES = ["offer", "announcement", "warning"];
 
-export default function SuperAdminShopModal({ shopId, onClose, onChanged }) {
-  const { api } = useSuperAdminAuth();
-  const { toast, promptInput } = useSuperAdminUI();
-  const [data, setData] = useState(null);
-  const [busy, setBusy] = useState(false);
+const ICONS = {
+  close: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
+  send: <><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></>,
+  users: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
+  mail: <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m2 7 10 6 10-6" /></>,
+};
 
-  const load = () => {
-    api(`/shops/${shopId}`).then(setData).catch((e) => toast.error(e.message));
-  };
-
-  useEffect(() => { load(); }, [shopId]);
-
-  const updateSubscription = async (patch) => {
-    setBusy(true);
-    try {
-      await api(`/shops/${shopId}/subscription`, { method: "PATCH", body: JSON.stringify(patch) });
-      toast.success("Subscription updated.");
-      load();
-      onChanged?.();
-    } catch (e) { toast.error(e.message); } finally { setBusy(false); }
-  };
-
-  const setDiscount = async () => {
-    const sub = data.shop.subscription;
-    const result = await promptInput({
-      title: "Set Loyalty Discount",
-      description: "Yeh discount shop ke agle renewal pe apply hoga.",
-      confirmLabel: "Save Discount",
-      fields: [{ key: "discountPercent", label: "Discount %", type: "number", defaultValue: sub.discountPercent || 0 }],
-    });
-    if (result === null) return;
-    const dp = Number(result.discountPercent);
-    if (isNaN(dp) || dp < 0 || dp > 100) return toast.error("Discount 0–100 ke beech hona chahiye.");
-    updateSubscription({ discountPercent: dp });
-  };
-
-  const recordPayment = async () => {
-    const sub = data.shop.subscription;
-    const defaultAmt = Math.round((sub.monthlyAmount || 0) * (1 - (sub.discountPercent || 0) / 100));
-    const result = await promptInput({
-      title: "Record Payment",
-      description: "Yeh renewal history mein jud jayega aur loyalty tracking ke liye count hoga.",
-      confirmLabel: "Record Payment",
-      fields: [{ key: "amount", label: "Amount Received (₹)", type: "number", defaultValue: defaultAmt }],
-    });
-    if (result === null) return;
-    const amt = Number(result.amount);
-    if (isNaN(amt) || amt < 0) return toast.error("Invalid amount.");
-
-    setBusy(true);
-    try {
-      await api(`/shops/${shopId}/record-payment`, { method: "POST", body: JSON.stringify({ amount: amt }) });
-      toast.success(`₹${amt} payment recorded.`);
-      load();
-      onChanged?.();
-    } catch (e) { toast.error(e.message); } finally { setBusy(false); }
-  };
-
-  const sendOffer = async () => {
-    const result = await promptInput({
-      title: "Send Offer / Message",
-      description: "Yeh shop owner ko notify hoga.",
-      confirmLabel: "Send",
-      fields: [
-        { key: "title", label: "Title", placeholder: "e.g. 20% off renewal!", required: true },
-        { key: "message", label: "Message", type: "textarea", placeholder: "Write your offer/message here...", required: true },
-      ],
-    });
-    if (result === null) return;
-
-    setBusy(true);
-    try {
-      await api(`/shops/${shopId}/notify`, { method: "POST", body: JSON.stringify({ ...result, type: "offer" }) });
-      toast.success("Message sent.");
-      load();
-    } catch (e) { toast.error(e.message); } finally { setBusy(false); }
-  };
-
-  if (!data) {
-    return (
-      <ModalShell onClose={onClose}>
-        <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: "50%",
-            border: "3px solid rgba(255,255,255,0.1)", borderTopColor: "#8b5cf6",
-            animation: "sa-spin 0.7s linear infinite",
-          }} />
-        </div>
-      </ModalShell>
-    );
-  }
-
-  const { shop, users, messages } = data;
-  const sub = shop.subscription || {};
-  const history = sub.renewalHistory || [];
-  const isLoyal = history.length >= 3;
-
+function Icon({ name, size = 15, color = "currentColor" }) {
   return (
-    <ModalShell onClose={onClose}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 20, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            {shop.shopName}
-            {isLoyal && (
-              <span style={{
-                fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 99,
-                color: "#fbbf24", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.3)",
-              }}>⭐ LOYAL</span>
-            )}
-          </h2>
-          <p style={{ fontSize: 12, color: "#7a7a90", marginTop: 3 }}>{shop.shopId}</p>
-        </div>
-        <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#7a7a90", fontSize: 16, cursor: "pointer" }}>✕</button>
-      </div>
-
-      {/* Subscription */}
-      <Section title="Subscription">
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-          {["free", "pro", "premium"].map((p) => (
-            <button
-              key={p}
-              disabled={busy}
-              onClick={() => updateSubscription({ plan: p })}
-              className="sa-btn"
-              style={{
-                padding: "7px 16px", borderRadius: 10, fontSize: 12, fontWeight: 700,
-                border: `1.5px solid ${sub.plan === p ? "#8b5cf6" : "rgba(255,255,255,0.1)"}`,
-                background: sub.plan === p ? "rgba(139,92,246,0.15)" : "transparent",
-                color: sub.plan === p ? "#c4b5fd" : "#8888a0",
-                cursor: busy ? "not-allowed" : "pointer", textTransform: "capitalize",
-              }}
-            >{p} · ₹{PLAN_AMOUNTS[p]}</button>
-          ))}
-        </div>
-
-        <div style={{ display: "flex", gap: 20, fontSize: 12, color: "#8888a0", marginBottom: 14, flexWrap: "wrap" }}>
-          <Stat label="Monthly" value={`₹${sub.monthlyAmount || 0}`} />
-          <Stat label="Discount" value={`${sub.discountPercent || 0}%`} />
-          <Stat label="Renewals" value={history.length} />
-        </div>
-
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <ActionBtn color="#4ade80" onClick={setDiscount} disabled={busy}>Set Loyalty Discount</ActionBtn>
-          <ActionBtn color="#8b5cf6" onClick={recordPayment} disabled={busy}>Record Payment</ActionBtn>
-        </div>
-
-        {history.length > 0 && (
-          <div className="sa-scan" style={{ marginTop: 16, maxHeight: 130, overflowY: "auto" }}>
-            <p style={{ fontSize: 10.5, color: "#7a7a90", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Payment History</p>
-            {[...history].reverse().map((r, i) => (
-              <div key={i} style={{
-                display: "flex", justifyContent: "space-between", fontSize: 12,
-                padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", color: "#c0c0d0",
-              }}>
-                <span>{new Date(r.date).toLocaleDateString("en-IN")} · <span style={{ textTransform: "capitalize" }}>{r.plan}</span></span>
-                <span style={{ fontWeight: 700, color: "#4ade80" }}>₹{r.amount}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {/* Team */}
-      <Section title={`Team (${users.length})`}>
-        {users.map((u) => (
-          <div key={u._id} style={{
-            display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12,
-            padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.05)",
-          }}>
-            <span style={{ color: "#fff", fontWeight: 600 }}>
-              {u.name} <span style={{ color: "#7a7a90", fontWeight: 400, textTransform: "capitalize" }}>· {u.role}</span>
-            </span>
-            <span style={{ color: "#7a7a90" }}>{u.email}</span>
-          </div>
-        ))}
-      </Section>
-
-      {/* Messages */}
-      <Section title="Messages & Offers">
-        <ActionBtn color="#fbbf24" onClick={sendOffer} disabled={busy}>+ Send Offer / Message</ActionBtn>
-        <div style={{ marginTop: 12 }}>
-          {messages.length === 0 && <p style={{ fontSize: 12, color: "#5a5a6e" }}>Koi message nahi bheja abhi tak.</p>}
-          {messages.map((m) => (
-            <div key={m._id} style={{ padding: "9px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-              <p style={{ fontSize: 12.5, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
-                {m.title}
-                {!m.read && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fbbf24", flexShrink: 0 }} />}
-              </p>
-              <p style={{ fontSize: 11.5, color: "#8888a0", marginTop: 3 }}>{m.message}</p>
-            </div>
-          ))}
-        </div>
-      </Section>
-    </ModalShell>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {ICONS[name]}
+    </svg>
   );
 }
 
-function ModalShell({ children, onClose }) {
+const styles = `
+  .sam-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-end; justify-content: center; padding: 0; }
+  .sam-panel { width: 100%; max-height: 92vh; border-radius: 20px 20px 0 0; overflow-y: auto; }
+  @media (min-width: 640px) {
+    .sam-overlay { align-items: center; padding: 20px; }
+    .sam-panel { max-width: 560px; border-radius: 20px; max-height: 88vh; }
+  }
+  .sam-field { display: flex; flex-direction: column; gap: 6px; }
+  .sam-grid-2 { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  @media (min-width: 480px) { .sam-grid-2 { grid-template-columns: 1fr 1fr; } }
+  .sam-grid-3 { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  @media (min-width: 480px) { .sam-grid-3 { grid-template-columns: 1fr 1fr 1fr; } }
+  .sam-btn { transition: all 0.15s ease; }
+  .sam-btn:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
+  @keyframes sam-fade-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+  .sam-fade-in { animation: sam-fade-up 0.25s ease both; }
+`;
+
+export default function SuperAdminShopModal({ shopId, onClose, onChanged }) {
+  const { api } = useSuperAdminAuth();
+  const { toast } = useSuperAdminUI();
+  const { t } = useTheme();
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [detail, setDetail] = useState(null); // { shop, users, messages }
+
+  const [plan, setPlan] = useState("free");
+  const [monthlyAmount, setMonthlyAmount] = useState(0);
+  const [discountPercent, setDiscountPercent] = useState(0);
+  const [savingSub, setSavingSub] = useState(false);
+
+  const [msgTitle, setMsgTitle] = useState("");
+  const [msgBody, setMsgBody] = useState("");
+  const [msgType, setMsgType] = useState("offer");
+  const [sending, setSending] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    api(`/shops/${shopId}`)
+      .then((data) => {
+        setDetail(data);
+        const sub = data.shop?.subscription || {};
+        setPlan(sub.plan || "free");
+        setMonthlyAmount(sub.monthlyAmount ?? PLAN_DEFAULT_AMOUNTS[sub.plan || "free"]);
+        setDiscountPercent(sub.discountPercent || 0);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [shopId]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const handlePlanChange = (newPlan) => {
+    setPlan(newPlan);
+    setMonthlyAmount(PLAN_DEFAULT_AMOUNTS[newPlan]);
+  };
+
+  const saveSubscription = async () => {
+    setSavingSub(true);
+    try {
+      await api(`/shops/${shopId}/subscription`, {
+        method: "PATCH",
+        body: JSON.stringify({ plan, monthlyAmount: Number(monthlyAmount), discountPercent: Number(discountPercent) }),
+      });
+      toast.success("Subscription updated.");
+      onChanged?.();
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setSavingSub(false);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!msgTitle.trim() || !msgBody.trim()) {
+      toast.error("Title and message are required.");
+      return;
+    }
+    setSending(true);
+    try {
+      await api(`/shops/${shopId}/notify`, {
+        method: "POST",
+        body: JSON.stringify({ title: msgTitle.trim(), message: msgBody.trim(), type: msgType }),
+      });
+      toast.success("Message sent to shop.");
+      setMsgTitle("");
+      setMsgBody("");
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const shop = detail?.shop;
+  const users = detail?.users || [];
+  const messages = detail?.messages || [];
+
   return (
     <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(5,5,10,0.75)", backdropFilter: "blur(4px)",
-        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20,
-      }}
+      className="sam-overlay"
+      style={{ background: "rgba(0,0,0,0.55)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="sa-scan"
-        style={{
-          width: 560, maxHeight: "85vh", overflowY: "auto",
-          background: "linear-gradient(180deg, #17171f 0%, #131319 100%)",
-          border: "1px solid rgba(255,255,255,0.08)", borderRadius: 22,
-          padding: 26, color: "#fff", fontFamily: "'DM Sans', sans-serif",
-          boxShadow: "0 30px 70px rgba(0,0,0,0.5)",
-        }}
-      >
-        {children}
+      <div className="sam-panel sam-fade-in" style={{ background: t.bgPage, border: `1px solid ${t.border}`, color: t.textPrimary }}>
+        {/* Header */}
+        <div style={{
+          position: "sticky", top: 0, zIndex: 1, display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "18px 20px", borderBottom: `1px solid ${t.border}`, background: t.bgPage,
+        }}>
+          <div style={{ minWidth: 0 }}>
+            <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 17, margin: 0, color: t.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {shop?.shopName || "Loading…"}
+            </h2>
+            {shop && <p style={{ fontSize: 11.5, color: t.textMuted, margin: "3px 0 0" }}>{shop.shopId}</p>}
+          </div>
+          <button onClick={onClose} className="sam-btn" style={{
+            width: 32, height: 32, borderRadius: 9, border: `1px solid ${t.border}`, background: t.bgCard,
+            color: t.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
+            <Icon name="close" size={15} />
+          </button>
+        </div>
+
+        <div style={{ padding: "18px 20px 28px", display: "flex", flexDirection: "column", gap: 22 }}>
+          {loading && <p style={{ fontSize: 13, color: t.textMuted }}>Loading shop details…</p>}
+          {error && <p style={{ fontSize: 13, color: t.red }}>{error}</p>}
+
+          {!loading && shop && (
+            <>
+              {/* Overview */}
+              <div className="sam-grid-3">
+                <InfoBox t={t} label="Status" value={shop.status === "active" ? "Active" : "Suspended"} accent={shop.status === "active" ? t.green : t.red} />
+                <InfoBox t={t} label="Owner" value={detail?.users?.find((u) => String(u._id) === String(shop.ownerId))?.name || "—"} />
+                <InfoBox t={t} label="Team size" value={users.length} />
+              </div>
+              {shop.status === "suspended" && shop.suspendedReason && (
+                <p style={{ margin: "-10px 0 0", fontSize: 12, color: t.red }}>Reason: {shop.suspendedReason}</p>
+              )}
+
+              {/* Subscription */}
+              <Section t={t} title="Subscription">
+                <div className="sam-grid-3">
+                  <div className="sam-field">
+                    <label style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Plan</label>
+                    <select
+                      value={plan}
+                      onChange={(e) => handlePlanChange(e.target.value)}
+                      style={selectStyle(t)}
+                    >
+                      {PLANS.map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
+                    </select>
+                  </div>
+                  <div className="sam-field">
+                    <label style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Monthly amount (₹)</label>
+                    <input type="number" value={monthlyAmount} onChange={(e) => setMonthlyAmount(e.target.value)} style={inputStyle(t)} />
+                  </div>
+                  <div className="sam-field">
+                    <label style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Discount (%)</label>
+                    <input type="number" min="0" max="100" value={discountPercent} onChange={(e) => setDiscountPercent(e.target.value)} style={inputStyle(t)} />
+                  </div>
+                </div>
+                <button onClick={saveSubscription} disabled={savingSub} className="sam-btn" style={{
+                  marginTop: 12, padding: "9px 18px", borderRadius: 10, border: "none",
+                  background: t.accent, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                  opacity: savingSub ? 0.6 : 1,
+                }}>
+                  {savingSub ? "Saving…" : "Save subscription"}
+                </button>
+                {shop.subscription?.renewalHistory?.length > 0 && (
+                  <p style={{ fontSize: 11, color: t.textMuted, marginTop: 10 }}>
+                    {shop.subscription.renewalHistory.length} renewal(s) recorded so far.
+                  </p>
+                )}
+              </Section>
+
+              {/* Send message */}
+              <Section t={t} title="Send a message to this shop">
+                <div className="sam-grid-2">
+                  <div className="sam-field">
+                    <label style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Title</label>
+                    <input value={msgTitle} onChange={(e) => setMsgTitle(e.target.value)} placeholder="e.g. Festive discount" style={inputStyle(t)} />
+                  </div>
+                  <div className="sam-field">
+                    <label style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Type</label>
+                    <select value={msgType} onChange={(e) => setMsgType(e.target.value)} style={selectStyle(t)}>
+                      {MSG_TYPES.map((mt) => <option key={mt} value={mt}>{mt[0].toUpperCase() + mt.slice(1)}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="sam-field" style={{ marginTop: 12 }}>
+                  <label style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Message</label>
+                  <textarea
+                    value={msgBody}
+                    onChange={(e) => setMsgBody(e.target.value)}
+                    rows={3}
+                    placeholder="Write what you want the shop owner to see…"
+                    style={{ ...inputStyle(t), resize: "vertical", fontFamily: "'DM Sans', sans-serif" }}
+                  />
+                </div>
+                <button onClick={sendMessage} disabled={sending} className="sam-btn" style={{
+                  marginTop: 12, padding: "9px 18px", borderRadius: 10, border: "none",
+                  background: t.accent, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                  opacity: sending ? 0.6 : 1, display: "inline-flex", alignItems: "center", gap: 6,
+                }}>
+                  <Icon name="send" size={13} color="#fff" /> {sending ? "Sending…" : "Send message"}
+                </button>
+              </Section>
+
+              {/* Message history */}
+              <Section t={t} title={`Message history (${messages.length})`} icon="mail">
+                {messages.length === 0 ? (
+                  <p style={{ fontSize: 12.5, color: t.textMuted, margin: 0 }}>No messages sent to this shop yet.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {messages.map((m) => (
+                      <div key={m._id} style={{
+                        padding: "10px 12px", borderRadius: 10, background: t.bgCard, border: `1px solid ${t.border}`,
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                          <span style={{ fontWeight: 700, fontSize: 12.5, color: t.textPrimary }}>{m.title}</span>
+                          <span style={{
+                            fontSize: 9.5, fontWeight: 700, padding: "2px 8px", borderRadius: 99, textTransform: "capitalize",
+                            color: m.type === "warning" ? t.red : t.accent,
+                            background: m.type === "warning" ? t.redBg : `${t.accent}18`,
+                          }}>{m.type}</span>
+                        </div>
+                        <p style={{ fontSize: 12, color: t.textMuted, margin: "4px 0 0" }}>{m.message}</p>
+                        <p style={{ fontSize: 10, color: t.textMuted, margin: "6px 0 0", opacity: 0.7 }}>
+                          {new Date(m.createdAt).toLocaleString("en-IN")}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Section>
+
+              {/* Team */}
+              <Section t={t} title={`Team (${users.length})`} icon="users">
+                {users.length === 0 ? (
+                  <p style={{ fontSize: 12.5, color: t.textMuted, margin: 0 }}>No users found for this shop.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {users.map((u) => (
+                      <div key={u._id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5 }}>
+                        <span style={{ color: t.textPrimary, fontWeight: 500 }}>{u.name}{String(u._id) === String(shop.ownerId) ? " (Owner)" : ""}</span>
+                        <span style={{ color: t.textMuted }}>{u.email}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            </>
+          )}
+        </div>
       </div>
-      <style>{`@keyframes sa-spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{styles}</style>
     </div>
   );
 }
 
-function Section({ title, children }) {
+function Section({ t, title, icon, children }) {
   return (
-    <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-      <p style={{ fontSize: 11, fontWeight: 700, color: "#7a7a90", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>{title}</p>
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        {icon && <Icon name={icon} size={14} color={t.textMuted} />}
+        <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: t.textMuted, margin: 0 }}>{title}</h3>
+      </div>
       {children}
     </div>
   );
 }
 
-function Stat({ label, value }) {
+function InfoBox({ t, label, value, accent }) {
   return (
-    <span>{label}: <b style={{ color: "#fff" }}>{value}</b></span>
+    <div style={{ padding: "10px 12px", borderRadius: 12, background: t.bgCard, border: `1px solid ${t.border}` }}>
+      <p style={{ fontSize: 10, color: t.textMuted, margin: 0, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</p>
+      <p style={{ fontSize: 14, fontWeight: 700, margin: "4px 0 0", color: accent || t.textPrimary, fontFamily: "'Syne', sans-serif" }}>{value}</p>
+    </div>
   );
 }
 
-function ActionBtn({ children, color, onClick, disabled }) {
-  return (
-    <button onClick={onClick} disabled={disabled} className="sa-btn" style={{
-      padding: "8px 16px", borderRadius: 10, fontSize: 12, fontWeight: 700,
-      border: `1.5px solid ${color}55`, color, background: `${color}12`,
-      cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
-    }}>{children}</button>
-  );
+function inputStyle(t) {
+  return {
+    padding: "9px 12px", borderRadius: 9, border: `1px solid ${t.border}`,
+    background: t.bgCard, color: t.textPrimary, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box",
+  };
+}
+
+function selectStyle(t) {
+  return { ...inputStyle(t), cursor: "pointer" };
 }

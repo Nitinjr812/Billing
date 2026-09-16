@@ -88,7 +88,7 @@ function useSuppliersData(pollMs = 60000) {
             loading: false,
             error: null,
             suppliers: withKhata,
-            products: rawProducts,          // 👈 naya
+            products: rawProducts,          // 👈 new
             overallKhata: purchaseSummary.overall || { totalPurchased: 0, totalPaid: 0, totalPending: 0 },
           });
         }
@@ -412,13 +412,13 @@ function buildRestockMessage(supplierLabel, items) {
     .filter((it) => it.name.trim())
     .map((it, i) => `${i + 1}. ${it.name.trim()}${it.qty ? ` – ${it.qty}` : ""}`);
   return [
-    `Namaste${supplierLabel ? " " + supplierLabel : ""},`,
+    `Hello${supplierLabel ? " " + supplierLabel : ""},`,
     ``,
-    `Kripya niche diye gaye items ka restock bhej dijiye:`,
+    `Please send a restock of the items listed below:`,
     ``,
     ...lines,
     ``,
-    `Dhanyavaad!`,
+    `Thank you!`,
   ].join("\n");
 }
 
@@ -494,9 +494,9 @@ function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders 
   const [err, setErr] = useState("");
   const [sending, setSending] = useState(false);
 
-  // ad-hoc mode mein jo supplier dropdown se pick hua
+  // supplier picked from dropdown in ad-hoc mode
   const pickedSupplier = suppliers.find((s) => s._id === pickedSupplierId) || null;
-  // saving ke liye effective supplier — drawer se aaya ho ya dropdown se pick kiya ho
+  // effective supplier for saving — either came from drawer or picked from dropdown
   const effectiveSupplier = supplier || pickedSupplier;
 
   const handlePickSupplier = (sup) => {
@@ -512,8 +512,8 @@ function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders 
     ? suppliers.filter((s) => s.name.toLowerCase().includes(supplierQuery.trim().toLowerCase())).slice(0, 6)
     : [];
 
-  // is supplier ke products ke naam — item input mein suggest karne ke liye.
-  // Ad-hoc / no supplier chuna ho toh saare products suggest karo.
+  // This supplier's product names — to suggest in the item input.
+  // If ad-hoc / no supplier chosen, suggest all products.
   const supplierProductNames = [...new Set(
     products
       .filter((p) => !effectiveSupplier || (p.supplier || "").toLowerCase() === effectiveSupplier.name.toLowerCase())
@@ -521,7 +521,7 @@ function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders 
       .filter(Boolean)
   )];
 
-  // is supplier ke purane restock orders — reorder ke liye
+  // This supplier's previous restock orders — for reorder
   const historyOrders = effectiveSupplier
     ? allOrders
         .filter((o) => (o.supplier === effectiveSupplier._id) || ((o.supplierName || "").toLowerCase() === effectiveSupplier.name.toLowerCase()))
@@ -532,7 +532,7 @@ function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders 
     const cloned = (order.items || []).map((it, i) => ({ id: `${Date.now()}-${i}`, name: it.name || "", qty: it.qty || "" }));
     setItems(cloned.length ? [...cloned, { id: `${Date.now()}-new`, name: "", qty: "" }] : [{ id: "0", name: "", qty: "" }]);
     setMessage("");
-    onToast?.("✅ Purana order load ho gaya — check karke bhej dijiye");
+    onToast?.("✅ Previous order loaded — please check and send");
   };
 
   const inputStyle = {
@@ -566,16 +566,16 @@ function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders 
 
   const handleGenerate = () => {
     setErr("");
-    if (!items.some((it) => it.name.trim())) return setErr("Kam se kam ek item ka naam daaliye");
+    if (!items.some((it) => it.name.trim())) return setErr("Please enter at least one item name");
     setMessage(buildRestockMessage(name, items));
   };
 
   const handleSend = async () => {
     setErr("");
     const digits = toWhatsAppDigits(phone);
-    if (!digits) return setErr("Valid WhatsApp number daaliye (10 digit ya +91 ke saath)");
+    if (!digits) return setErr("Please enter a valid WhatsApp number (10 digits or with +91)");
     const finalMessage = message || buildRestockMessage(name, items);
-    if (!finalMessage.trim()) return setErr("Message khaali hai — items daal ke pehle Generate kariye");
+    if (!finalMessage.trim()) return setErr("Message is empty — add items and click Generate first");
 
     const cleanItems = items
       .filter((it) => it.name.trim())
@@ -594,13 +594,13 @@ function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders 
       });
       onOrderSaved?.();
     } catch (e) {
-      onToast?.("⚠️ WhatsApp bhej rahe hain, par restock order save nahi hua — Pending Restocks mein manually check kar lena.");
+      onToast?.("⚠️ Opening WhatsApp, but the restock order didn't save — please check Pending Restocks manually.");
     }
     setSending(false);
 
     const url = `https://wa.me/${digits}?text=${encodeURIComponent(finalMessage)}`;
     window.open(url, "_blank", "noopener,noreferrer");
-    onToast?.("✅ WhatsApp khul gaya — bas Send dabaiye!");
+    onToast?.("✅ WhatsApp opened — just press Send!");
     onClose();
   };
 
@@ -636,8 +636,8 @@ function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders 
 
         {err && <p style={{ fontSize: 12, color: t.red, margin: 0 }}>{err}</p>}
 
-        {/* 👇 sirf ad-hoc mode mein (jab drawer se supplier fixed nahi hai) —
-            ab yeh ek search box hai, type karte hi matching suppliers dikhte hain */}
+        {/* Only in ad-hoc mode (when supplier isn't fixed from drawer) —
+            this is now a search box, matching suppliers show as you type */}
         {!supplier && suppliers.length > 0 && (
           <div style={{ position: "relative" }}>
             <label style={labelStyle}>Search Existing Supplier (optional)</label>
@@ -646,7 +646,7 @@ function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders 
               style={inputStyle}
               value={pickedSupplier ? pickedSupplier.name : supplierQuery}
               onChange={(e) => { setSupplierQuery(e.target.value); setPickedSupplierId(""); }}
-              placeholder="Naam type karke suggestions dekhein…"
+              placeholder="Type a name to see suggestions…"
             />
             {pickedSupplier && (
               <button
@@ -705,7 +705,7 @@ function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders 
         </div>
         {!supplier && !pickedSupplier && (
           <p style={{ fontSize: 11, color: t.textMuted, margin: 0 }}>
-            Upar search se supplier chunn, ya neeche manually naya number daal.
+            Pick a supplier from the search above, or enter a new number manually below.
           </p>
         )}
 
@@ -763,7 +763,7 @@ function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders 
         </div>
 
         <p style={{ fontSize: 11, color: t.textMuted, margin: 0 }}>
-          Ye items "Pending Restocks" list mein bhi dikhenge — jab supplier maal de de, "Mark Complete" dabana, stock apne aap Inventory mein add ho jaayega. Agar 2 din mein maal nahi aaya, hum yaad dilaenge.
+          These items will also show up in the "Pending Restocks" list — once the supplier delivers, press "Mark Complete" and the stock will automatically be added to Inventory. If it doesn't arrive within 2 days, we'll remind you.
         </p>
 
         <button
@@ -781,7 +781,7 @@ function RestockAlertModal({ supplier, suppliers = [], products = [], allOrders 
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Generate Message dabaiye, ya seedha yahin type kariye…"
+            placeholder="Click Generate Message, or type directly here…"
             rows={7}
             style={{ ...inputStyle, resize: "vertical", fontFamily: "'DM Sans', sans-serif", lineHeight: 1.5 }}
           />
@@ -880,7 +880,7 @@ function PendingRestocksCard({ orders, loading, error, onComplete, t }) {
   );
 }
 
-// ─── RESTOCK CHECK-IN POPUP — asks "maal aaya kya?" for orders that have
+// ─── RESTOCK CHECK-IN POPUP — asks "did it arrive?" for orders that have
 // been Pending for 2+ days. Yes -> marks Complete (pushes stock into
 // Inventory, same as the button in PendingRestocksCard). No -> asks for a
 // new expected date and saves it so the order shows up with that ETA and
@@ -951,10 +951,10 @@ function RestockCheckinModal({ order, onYes, onNo, onDismiss, t }) {
           </h3>
         </div>
         <p style={{ fontSize: 13, color: t.textPrimary, margin: 0 }}>
-          <strong>{order.supplierName || "Supplier"}</strong> se bheja gaya restock —
+          Restock sent to <strong>{order.supplierName || "Supplier"}</strong> —
         </p>
         <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>{itemsText}</p>
-        <p style={{ fontSize: 13, color: t.textPrimary, margin: "4px 0 0", fontWeight: 600 }}>Kya maal aa gaya?</p>
+        <p style={{ fontSize: 13, color: t.textPrimary, margin: "4px 0 0", fontWeight: 600 }}>Has the stock arrived?</p>
 
         {!showDatePicker ? (
           <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
@@ -964,20 +964,20 @@ function RestockCheckinModal({ order, onYes, onNo, onDismiss, t }) {
                 flex: 1, background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`,
                 borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer",
               }}
-            >Nahi, abhi tak nahi</button>
+            >No, not yet</button>
             <button
               onClick={() => onYes(order)}
               style={{
                 flex: 1, background: t.green, color: "#fff", border: "none",
                 borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer",
               }}
-            >✓ Haan, aagya</button>
+            >✓ Yes, it arrived</button>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div>
               <label style={{ fontSize: 11, color: t.textMuted, display: "block", marginBottom: 4 }}>
-                Kab tak aane ki umeed hai?
+                When do you expect it to arrive?
               </label>
               <input
                 type="date"
@@ -1017,7 +1017,7 @@ function RestockCheckinModal({ order, onYes, onNo, onDismiss, t }) {
             background: "none", border: "none", color: t.textMuted, fontSize: 11,
             cursor: "pointer", textAlign: "center", marginTop: 4, textDecoration: "underline",
           }}
-        >Baad mein poochna</button>
+        >Ask me later</button>
       </div>
     </div>
   );
@@ -1786,7 +1786,7 @@ function SupplierDrawer({ supplier, products = [], allOrders = [], onClose, onEd
                 <button
                     onClick={() => setShowRestock(true)}
                     disabled={!supplier.phone}
-                    title={!supplier.phone ? "Is supplier ka phone number nahi hai — Edit se add karein" : undefined}
+                    title={!supplier.phone ? "This supplier has no phone number — add one via Edit" : undefined}
                     style={{
                         display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                         padding: "12px 10px", borderRadius: "10px",
@@ -2327,12 +2327,12 @@ export default function Suppliers() {
           body: JSON.stringify({ expectedDate }),
         });
         refreshRestockOrders();
-        setToast("✅ Naya expected date save ho gaya, hum baad mein phir poochenge");
+        setToast("✅ New expected date saved, we'll ask again later");
       } else {
-        setToast("Theek hai, thodi der baad phir poochenge");
+        setToast("Okay, we'll ask again after a while");
       }
     } catch (e) {
-      setToast("⚠️ Date save nahi hua, par reminder chalta rahega");
+      setToast("⚠️ Date didn't save, but the reminder will continue");
     }
     markAsked(order._id);
   };

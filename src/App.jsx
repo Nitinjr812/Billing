@@ -109,8 +109,7 @@ function AppInner() {
             </SuperAdminProtectedRoute>
           }
         />
-
-        {/* ─ Protected app shell ─ */}
+ 
         <Route
           path="/*"
           element={
