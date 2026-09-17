@@ -339,22 +339,32 @@ Let the user know data may not be real-time, but assist with general business qu
 
 function AiChatWidget({ t }) {
   const { user, token } = useAuth();
+  // `isGreeting: true` marks this as a local, client-only message — it is
+  // never sent to the backend as part of conversation history. This is what
+  // lets Alex's own opening business briefing (in routes/chat.js) correctly
+  // detect "this is the first real message" instead of always seeing a
+  // 1-item history and skipping the briefing.
   const [messages, setMessages] = useState(() => [
-    { role: "assistant", text: getGreeting(user?.name) },
+    { role: "assistant", text: getGreeting(user?.name), isGreeting: true },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const bottomRef = useRef(null);
+  const messagesContainerRef = useRef(null);
 
+  // Scroll ONLY the chat's own message list into view — never the page.
+  // (scrollIntoView on a bottom sentinel scrolls every scrollable ancestor,
+  // including the whole dashboard, which is what was causing the page to
+  // jump down every time a message was sent.)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = messagesContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages, loading]);
 
   useEffect(() => {
     if (!user?.name) return;
     setMessages((prev) => {
-      if (prev.length === 1 && prev[0].role === "assistant") {
-        return [{ role: "assistant", text: getGreeting(user.name) }];
+      if (prev.length === 1 && prev[0].role === "assistant" && prev[0].isGreeting) {
+        return [{ role: "assistant", text: getGreeting(user.name), isGreeting: true }];
       }
       return prev;
     });
@@ -370,7 +380,7 @@ function AiChatWidget({ t }) {
     setLoading(true);
 
     try {
-      const history = newMessages.slice(0, -1).slice(-12);
+      const history = newMessages.filter((m) => !m.isGreeting).slice(0, -1).slice(-12);
       const res = await fetch(`${BACKEND}/api/chat`, {
         method: "POST",
         headers: {
@@ -380,7 +390,21 @@ function AiChatWidget({ t }) {
         body: JSON.stringify({ message: userText, history }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+
+      // Plan's daily message limit hit — show the friendly upgrade prompt
+      // the backend sends instead of a generic error.
+      if (res.status === 429 && data?.error === "limit_reached") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            text: data.message || "Aaj ka message limit khatam ho gaya hai. Upgrade karke aur messages paayein.",
+          },
+        ]);
+        return;
+      }
+
       const reply = data?.reply || "Something went wrong. Please try again.";
       setMessages((prev) => [...prev, { role: "assistant", text: reply }]);
     } catch {
@@ -469,6 +493,7 @@ function AiChatWidget({ t }) {
       </div>
 
       <div
+        ref={messagesContainerRef}
         style={{
           flex: 1,
           overflowY: "auto",
@@ -512,7 +537,6 @@ function AiChatWidget({ t }) {
             </div>
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
 
       <div style={{ padding: "8px 12px 6px", display: "flex", gap: "5px", flexWrap: "wrap", flexShrink: 0, borderTop: `1px solid ${t.border}` }}>

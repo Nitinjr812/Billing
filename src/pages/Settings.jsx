@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom"; // used for the Billing "Upgrade/Manage Plan" link — <a href> caused a full page reload instead of an in-app navigation
 import { useTheme } from "../components/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { useApi } from "../hooks/useApi";
@@ -6,29 +7,18 @@ import { DiscountPermissionsSection } from "./DiscountPermissions";
 import { NAV_ITEMS as APP_NAV_ITEMS } from "../components/Navbar";
 import { useNavPermissions, ALWAYS_VISIBLE_IDS } from "../context/NavPermissionsContext";
 
-const INTEGRATIONS = [
-  { name: "Razorpay",     desc: "Payment gateway",           status: "connected", icon: "💳", color: "#2563eb" },
-  { name: "Shiprocket",   desc: "Logistics & shipping",      status: "connected", icon: "🚚", color: "#f97316" },
-  { name: "GST Portal",   desc: "Tax & invoice filing",      status: "connected", icon: "🏛️", color: "#16a34a" },
-  { name: "Mailchimp",    desc: "Email marketing",           status: "pending",   icon: "📧", color: "#f59e0b" },
-  { name: "Google Ads",   desc: "Ad campaign management",    status: "disconnected", icon: "📣", color: "#ef4444" },
-  { name: "Tally Prime",  desc: "Accounting software",       status: "disconnected", icon: "📒", color: "#8b5cf6" },
-];
+// Backend Shop.subscription.plan enum ("free"|"pro"|"premium") → display name
+const PLAN_DISPLAY_NAMES = { free: "Starter", pro: "Pro", premium: "Enterprise" };
 
-const BILLING = {
-  plan: "Pro",
-  billing: "Annual",
-  nextBilling: "12 Jan 2025",
-  amount: "₹14,999 / year",
-  usage: { api: 68, storage: 42, seats: 75 },
-};
-
+// NOTE: "Integrations" tab removed — it was demo/dummy data only
+// (a hardcoded local array, never persisted to the backend), so it was
+// never actually functional. Re-add it once there's a real
+// /settings/integrations API to back it.
 const SETTINGS_NAV_ITEMS = [
   { id: "profile",       label: "Profile" },
   { id: "tax",           label: "Tax & GST" },
   { id: "discounts",     label: "Discount Limits" },
   { id: "notifications", label: "Notifications" },
-  { id: "integrations",  label: "Integrations" },
   { id: "team",          label: "Team & Access" },
   { id: "access",        label: "Access Control", ownerOnly: true },
   { id: "billing",       label: "Billing" },
@@ -70,14 +60,6 @@ function NavIcon({ id, size = 17 }) {
       <>
         <path d="M12 4.2a4.8 4.8 0 0 0-4.8 4.8v3.3L5.5 15.8h13l-1.7-3.5V9a4.8 4.8 0 0 0-4.8-4.8z" />
         <path d="M10.2 18.6a1.8 1.8 0 0 0 3.6 0" />
-      </>
-    ),
-    integrations: (
-      <>
-        <rect x="4" y="4" width="6.5" height="6.5" rx="1.4" />
-        <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.4" />
-        <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.4" />
-        <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.4" />
       </>
     ),
     team: (
@@ -193,22 +175,6 @@ function Toggle({ on, onChange }) {
         boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
       }} />
     </div>
-  );
-}
-
-function Badge({ status }) {
-  const map = {
-    connected:    { color: "#16a34a", bg: "#dcfce7", label: "Connected"    },
-    pending:      { color: "#d97706", bg: "#fef3c7", label: "Pending"      },
-    disconnected: { color: "#6b7280", bg: "#f3f4f6", label: "Disconnected" },
-  };
-  const s = map[status] || map.disconnected;
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 600, padding: "3px 10px",
-      borderRadius: 99, color: s.color, background: s.bg,
-      fontFamily: "'DM Sans', sans-serif",
-    }}>{s.label}</span>
   );
 }
 
@@ -683,46 +649,6 @@ function NotificationsSection() {
   );
 }
 
-// ─── SECTION: INTEGRATIONS (demo) ───────────────────────────────────────
-function IntegrationsSection() {
-  const { t } = useTheme();
-  const [list, setList] = useState(INTEGRATIONS);
-  const toggle = (name) =>
-    setList((l) => l.map((i) => i.name === name ? { ...i, status: i.status === "connected" ? "disconnected" : "connected" } : i));
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SectionTitle sub="Connect third-party services (demo — coming soon)">Integrations</SectionTitle>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px,1fr))", gap: 12 }}>
-        {list.map((intg) => (
-          <Card key={intg.name} style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{
-              width: 42, height: 42, borderRadius: 12, flexShrink: 0,
-              background: `${intg.color}18`, border: `1px solid ${intg.color}30`,
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20,
-            }}>{intg.icon}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 13, color: t.textPrimary }}>{intg.name}</p>
-              <p style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>{intg.desc}</p>
-              <div style={{ marginTop: 6 }}><Badge status={intg.status} /></div>
-            </div>
-            <button
-              onClick={() => toggle(intg.name)}
-              style={{
-                fontSize: 11, fontWeight: 600, padding: "5px 12px", borderRadius: 8,
-                border: `1.5px solid ${intg.status === "connected" ? t.red : t.accent}`,
-                color: intg.status === "connected" ? t.red : t.accent,
-                background: "transparent", cursor: "pointer", flexShrink: 0,
-                fontFamily: "'DM Sans', sans-serif", transition: "all 0.15s",
-              }}
-            >{intg.status === "connected" ? "Disconnect" : "Connect"}</button>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── SECTION: TEAM ───────────────────────────────────────────────────────
 function TeamSection() {
   const { t } = useTheme();
@@ -831,7 +757,6 @@ function TeamSection() {
   );
 }
 
-// ─── SECTION: ACCESS CONTROL (naya — owner-only) ─────────────────────────
 // ─── SECTION: ACCESS CONTROL (per-staff, owner-only) ─────────────────────
 function AccessControlSection() {
   const { t } = useTheme();
@@ -983,28 +908,123 @@ function AccessControlSection() {
     </div>
   );
 }
-// ─── SECTION: BILLING (demo) ─────────────────────────────────────────────
+
+// ─── SECTION: BILLING (pulls the same subscription data as the
+// Subscription page from /settings/subscription) ───────────────────────
 function BillingSection() {
   const { t } = useTheme();
+  const api = useApi();
+  const [sub, setSub] = useState(null);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    api("/settings/subscription")
+      .then(setSub)
+      .catch((e) => setMsg("❌ " + e.message));
+  }, []);
+
+  if (!sub) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <SectionTitle sub="Manage your subscription and usage">Billing</SectionTitle>
+        <Card>
+          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+            <Skeleton width={50} height={50} radius={14} />
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+              <Skeleton width={140} height={16} />
+              <Skeleton width={180} height={11} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+              <Skeleton width={90} height={18} />
+              <Skeleton width={70} height={26} radius={10} />
+            </div>
+          </div>
+        </Card>
+        <Toast message={msg} onDismiss={() => setMsg("")} />
+      </div>
+    );
+  }
+
+  const planName = PLAN_DISPLAY_NAMES[sub.plan] || sub.plan || "Starter";
+  const history = sub.renewalHistory || [];
+  const lastPayment = history.length > 0 ? history[history.length - 1] : null;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SectionTitle sub="Manage your subscription and usage (demo — coming soon)">Billing</SectionTitle>
-      <Card style={{ display: "flex", alignItems: "center", gap: 20 }}>
+      <SectionTitle sub="Manage your subscription and usage">Billing</SectionTitle>
+
+      <Card style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
         <div style={{
           width: 50, height: 50, borderRadius: 14, flexShrink: 0,
           background: `${t.accent}18`, border: `1px solid ${t.accent}30`,
           display: "flex", alignItems: "center", justifyContent: "center",
           fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 18, color: t.accent,
         }}>✦</div>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 18, color: t.textPrimary }}>{BILLING.plan} Plan</p>
-          <p style={{ fontSize: 12, color: t.textMuted }}>{BILLING.billing} · Renews {BILLING.nextBilling}</p>
+
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 18, color: t.textPrimary }}>
+            {planName} Plan
+          </p>
+          <p style={{ fontSize: 12, color: t.textMuted }}>
+            {lastPayment
+              ? `Last paid ${new Date(lastPayment.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`
+              : "No payments yet"}
+            {sub.discountPercent > 0 && ` · ${sub.discountPercent}% discount applied`}
+          </p>
         </div>
+
         <div style={{ textAlign: "right" }}>
-          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 20, color: t.textPrimary }}>{BILLING.amount}</p>
-          <GhostBtn small>Upgrade</GhostBtn>
+          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 900, fontSize: 20, color: t.textPrimary }}>
+            ₹{(sub.monthlyAmount || 0).toLocaleString("en-IN")}
+            <span style={{ fontSize: 12, fontWeight: 600, color: t.textMuted }}>/mo</span>
+          </p>
+          {/*
+            FIX: this used to be a plain <a href="/subscription">, which forces
+            a full page reload. On Vercel that only works if there's a SPA
+            rewrite rule for every route to index.html — without one, a hard
+            navigation straight to /subscription 404s. Using react-router's
+            <Link> does an in-app client-side navigation instead, so it works
+            regardless of server-side rewrite config.
+          */}
+          <Link to="/subscription" style={{ textDecoration: "none" }}>
+            <GhostBtn small>{sub.plan === "premium" ? "Manage Plan" : "Upgrade"}</GhostBtn>
+          </Link>
         </div>
       </Card>
+
+      {/* Quick renewal history — full history + plan comparison lives on the Subscription page */}
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ padding: "14px 24px", borderBottom: `1px solid ${t.border}` }}>
+          <p style={{ fontSize: 12, fontWeight: 700, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif" }}>
+            Recent Payments
+          </p>
+        </div>
+        {history.length === 0 ? (
+          <p style={{ fontSize: 12, color: t.textMuted, padding: "16px 24px" }}>No payments recorded yet.</p>
+        ) : (
+          [...history].reverse().slice(0, 3).map((row, i, arr) => (
+            <div key={row.orderId || i} style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "12px 24px",
+              borderBottom: i < arr.length - 1 ? `1px solid ${t.border}` : "none",
+            }}>
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 600, color: t.textPrimary, fontFamily: "'DM Sans', sans-serif", textTransform: "capitalize" }}>
+                  {PLAN_DISPLAY_NAMES[row.plan] || row.plan}
+                </p>
+                <p style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
+                  {new Date(row.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                </p>
+              </div>
+              <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 13, color: t.textPrimary }}>
+                ₹{row.amount.toLocaleString("en-IN")}
+              </p>
+            </div>
+          ))
+        )}
+      </Card>
+
+      <Toast message={msg} onDismiss={() => setMsg("")} />
     </div>
   );
 }
@@ -1121,7 +1141,6 @@ export default function Settings() {
     tax:           <TaxSection />,
     discounts:     <DiscountPermissionsSection embedded />,
     notifications: <NotificationsSection />,
-    integrations:  <IntegrationsSection />,
     team:          <TeamSection />,
     access:        isOwner ? <AccessControlSection /> : <ProfileSection />,
     billing:       <BillingSection />,

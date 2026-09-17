@@ -67,166 +67,183 @@ function ChartCard({ title, sub, children, style = {} }) {
 // ─── AI CHAT ──────────────────────────────────────────────────────────────────
 function AiChat({ t }) {
   const api = useApi();
-const [messages, setMessages] = useState([{
-  role: "assistant",
-  text: "👋 Hi! I'm your Reports Analyst — powered by live data.\n\nAsk me about:\n📈 Revenue & trends\n📦 Stock & inventory\n🏆 Top products\n🚨 Cancellations & offers",
-}]);
-const [input, setInput] = useState("");
-const [loading, setLoading] = useState(false);
-const [expanded, setExpanded] = useState(false);
-const bottomRef = useRef(null);
+  // `isGreeting: true` marks this as a local, client-only message — it's
+  // filtered out before building the `history` array sent to the backend,
+  // so it never gets miscounted as a real conversation turn.
+  const [messages, setMessages] = useState([{
+    role: "assistant",
+    text: "👋 Hi! I'm your Reports Analyst — powered by live data.\n\nAsk me about:\n📈 Revenue & trends\n📦 Stock & inventory\n🏆 Top products\n🚨 Cancellations & offers",
+    isGreeting: true,
+  }]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const messagesContainerRef = useRef(null);
 
-useEffect(() => {
-  bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-}, [messages, loading]);
+  // Scroll ONLY this chat's own message list — never the whole page.
+  // (scrollIntoView on a bottom sentinel scrolls every scrollable ancestor,
+  // which is what was causing the entire Reports page to jump down.)
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, loading]);
 
-const sendMessage = async (text) => {
-  const userText = text || input.trim();
-  if (!userText || loading) return;
-  setInput("");
-  if (!expanded) setExpanded(true);
+  const sendMessage = async (text) => {
+    const userText = text || input.trim();
+    if (!userText || loading) return;
+    setInput("");
+    if (!expanded) setExpanded(true);
 
-  const newMessages = [...messages, { role: "user", text: userText }];
-  setMessages(newMessages);
-  setLoading(true);
+    const newMessages = [...messages, { role: "user", text: userText }];
+    setMessages(newMessages);
+    setLoading(true);
 
-  try {
-    const data = await api("/report-chat", {
-      method: "POST",
-      body: JSON.stringify({ message: userText }),
-    });
-    const reply = data?.reply || "Something went wrong. Please try again.";
-    setMessages((prev) => [...prev, { role: "assistant", text: reply }]);
-  } catch {
-    setMessages((prev) => [...prev, { role: "assistant", text: "Network error. Please try again." }]);
-  } finally {
-    setLoading(false);
-  }
-};
+    try {
+      // Send real conversation history so follow-ups ("uska", "that one")
+      // resolve correctly, same as the Dashboard's Alex widget.
+      const history = newMessages.filter((m) => !m.isGreeting).slice(0, -1).slice(-12);
+      const data = await api("/report-chat", {
+        method: "POST",
+        body: JSON.stringify({ message: userText, history }),
+      });
+      const reply = data?.reply || "Something went wrong. Please try again.";
+      setMessages((prev) => [...prev, { role: "assistant", text: reply }]);
+    } catch (err) {
+      const isLimit = (err?.message || "").toLowerCase().includes("limit");
+      const msg = isLimit
+        ? "Aaj ka message limit khatam ho gaya hai. Upgrade karke aur messages paayein."
+        : "Network error. Please try again.";
+      setMessages((prev) => [...prev, { role: "assistant", text: msg }]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-const handleKey = (e) => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-};
+  const handleKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  };
 
-return (
-  <div style={{
-    borderRadius: "16px", background: t.bgCard, border: `1px solid ${t.border}`,
-    display: "flex", flexDirection: "column",
-    transition: "background 0.25s ease, border-color 0.25s ease", overflow: "hidden",
-  }}>
-    {/* Header */}
-    <div onClick={() => setExpanded((v) => !v)} style={{
-      padding: "12px 14px",
-      borderBottom: expanded ? `1px solid ${t.border}` : "none",
-      display: "flex", alignItems: "center", gap: "10px", flexShrink: 0,
-      cursor: "pointer", userSelect: "none",
+  return (
+    <div style={{
+      borderRadius: "16px", background: t.bgCard, border: `1px solid ${t.border}`,
+      display: "flex", flexDirection: "column",
+      transition: "background 0.25s ease, border-color 0.25s ease", overflow: "hidden",
     }}>
-      <div style={{
-        width: 30, height: 30, borderRadius: "9px",
-        background: `${t.accent}22`, border: `1px solid ${t.accent}44`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: "14px", flexShrink: 0,
-      }}>✦</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.textPrimary, lineHeight: 1.2, margin: 0 }}>Reports Analyst</p>
-        <p style={{ fontSize: "10px", color: t.green, fontWeight: 600, margin: 0 }}>● Live Data</p>
+      {/* Header */}
+      <div onClick={() => setExpanded((v) => !v)} style={{
+        padding: "12px 14px",
+        borderBottom: expanded ? `1px solid ${t.border}` : "none",
+        display: "flex", alignItems: "center", gap: "10px", flexShrink: 0,
+        cursor: "pointer", userSelect: "none",
+      }}>
+        <div style={{
+          width: 30, height: 30, borderRadius: "9px",
+          background: `${t.accent}22`, border: `1px solid ${t.accent}44`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: "14px", flexShrink: 0,
+        }}>✦</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: "13px", color: t.textPrimary, lineHeight: 1.2, margin: 0 }}>Reports Analyst</p>
+          <p style={{ fontSize: "10px", color: t.green, fontWeight: 600, margin: 0 }}>● Live Data</p>
+        </div>
+        <span style={{
+          fontSize: 12, color: t.textMuted,
+          transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+          transition: "transform 0.2s", display: "inline-block", flexShrink: 0,
+        }}>▼</span>
       </div>
-      <span style={{
-        fontSize: 12, color: t.textMuted,
-        transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
-        transition: "transform 0.2s", display: "inline-block", flexShrink: 0,
-      }}>▼</span>
-    </div>
 
-    {expanded && (
-      <>
-        {/* Messages */}
-        <div style={{
-          flex: 1, overflowY: "auto", padding: "12px",
-          display: "flex", flexDirection: "column", gap: "10px", maxHeight: 300,
-        }}>
-          {messages.map((msg, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
-              <div style={{
-                maxWidth: "90%", padding: "9px 13px",
-                borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-                background: msg.role === "user" ? t.accent : `${t.accent}12`,
-                color: msg.role === "user" ? "#fff" : t.textPrimary,
-                fontSize: "12px", lineHeight: 1.6, fontFamily: "'DM Sans', sans-serif",
-                border: msg.role === "assistant" ? `1px solid ${t.border}` : "none",
-                whiteSpace: "pre-wrap", wordBreak: "break-word",
-              }}>{msg.text}</div>
-            </div>
-          ))}
-          {loading && (
-            <div style={{ display: "flex", justifyContent: "flex-start" }}>
-              <div style={{
-                padding: "10px 16px", borderRadius: "14px 14px 14px 4px",
-                background: `${t.accent}12`, border: `1px solid ${t.border}`,
-                display: "flex", gap: "4px", alignItems: "center",
-              }}>
-                {[0, 1, 2].map((d) => (
-                  <div key={d} style={{
-                    width: 6, height: 6, borderRadius: "50%", background: t.accent,
-                    animation: "bounce 1.2s infinite", animationDelay: `${d * 0.2}s`,
-                  }} />
-                ))}
+      {expanded && (
+        <>
+          {/* Messages */}
+          <div
+            ref={messagesContainerRef}
+            style={{
+              flex: 1, overflowY: "auto", padding: "12px",
+              display: "flex", flexDirection: "column", gap: "10px", maxHeight: 300,
+            }}
+          >
+            {messages.map((msg, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
+                <div style={{
+                  maxWidth: "90%", padding: "9px 13px",
+                  borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                  background: msg.role === "user" ? t.accent : `${t.accent}12`,
+                  color: msg.role === "user" ? "#fff" : t.textPrimary,
+                  fontSize: "12px", lineHeight: 1.6, fontFamily: "'DM Sans', sans-serif",
+                  border: msg.role === "assistant" ? `1px solid ${t.border}` : "none",
+                  whiteSpace: "pre-wrap", wordBreak: "break-word",
+                }}>{msg.text}</div>
               </div>
-            </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
+            ))}
+            {loading && (
+              <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <div style={{
+                  padding: "10px 16px", borderRadius: "14px 14px 14px 4px",
+                  background: `${t.accent}12`, border: `1px solid ${t.border}`,
+                  display: "flex", gap: "4px", alignItems: "center",
+                }}>
+                  {[0, 1, 2].map((d) => (
+                    <div key={d} style={{
+                      width: 6, height: 6, borderRadius: "50%", background: t.accent,
+                      animation: "bounce 1.2s infinite", animationDelay: `${d * 0.2}s`,
+                    }} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
-        {/* Quick Prompts */}
-        <div style={{ padding: "0 10px 8px", display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: 0 }}>
-          {QUICK_PROMPTS.map((q) => (
-            <button key={q} onClick={() => sendMessage(q)} disabled={loading} style={{
-              fontSize: "10px", fontWeight: 600, padding: "4px 10px", borderRadius: "99px",
-              background: `${t.accent}15`, border: `1px solid ${t.accent}30`,
-              color: t.accent, cursor: loading ? "not-allowed" : "pointer",
-              fontFamily: "'DM Sans', sans-serif", opacity: loading ? 0.5 : 1,
-              transition: "all 0.15s", whiteSpace: "nowrap",
-            }}>{q}</button>
-          ))}
-        </div>
+          {/* Quick Prompts */}
+          <div style={{ padding: "0 10px 8px", display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: 0 }}>
+            {QUICK_PROMPTS.map((q) => (
+              <button key={q} onClick={() => sendMessage(q)} disabled={loading} style={{
+                fontSize: "10px", fontWeight: 600, padding: "4px 10px", borderRadius: "99px",
+                background: `${t.accent}15`, border: `1px solid ${t.accent}30`,
+                color: t.accent, cursor: loading ? "not-allowed" : "pointer",
+                fontFamily: "'DM Sans', sans-serif", opacity: loading ? 0.5 : 1,
+                transition: "all 0.15s", whiteSpace: "nowrap",
+              }}>{q}</button>
+            ))}
+          </div>
 
-        {/* Input */}
-        <div style={{
-          padding: "10px 12px", borderTop: `1px solid ${t.border}`,
-          display: "flex", gap: "8px", flexShrink: 0,
-        }}>
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKey}
-            placeholder="Ask about your reports…"
-            rows={1}
-            disabled={loading}
-            style={{
-              flex: 1, resize: "none", background: `${t.accent}08`,
-              border: `1px solid ${t.border}`, borderRadius: "10px",
-              padding: "8px 12px", fontSize: "12px", color: t.textPrimary,
-              fontFamily: "'DM Sans', sans-serif", outline: "none", lineHeight: 1.5,
-              minWidth: 0,
-            }}
-          />
-          <button
-            onClick={() => sendMessage()}
-            disabled={loading || !input.trim()}
-            style={{
-              width: 36, height: 36, borderRadius: "10px", flexShrink: 0,
-              background: loading || !input.trim() ? `${t.accent}30` : t.accent,
-              border: "none", cursor: loading || !input.trim() ? "not-allowed" : "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "16px", color: "#fff", transition: "background 0.2s",
-            }}
-          >↑</button>
-        </div>
-      </>
-    )}
-    <style>{`@keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-6px); } }`}</style>
-  </div>
-);
+          {/* Input */}
+          <div style={{
+            padding: "10px 12px", borderTop: `1px solid ${t.border}`,
+            display: "flex", gap: "8px", flexShrink: 0,
+          }}>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKey}
+              placeholder="Ask about your reports…"
+              rows={1}
+              disabled={loading}
+              style={{
+                flex: 1, resize: "none", background: `${t.accent}08`,
+                border: `1px solid ${t.border}`, borderRadius: "10px",
+                padding: "8px 12px", fontSize: "12px", color: t.textPrimary,
+                fontFamily: "'DM Sans', sans-serif", outline: "none", lineHeight: 1.5,
+                minWidth: 0,
+              }}
+            />
+            <button
+              onClick={() => sendMessage()}
+              disabled={loading || !input.trim()}
+              style={{
+                width: 36, height: 36, borderRadius: "10px", flexShrink: 0,
+                background: loading || !input.trim() ? `${t.accent}30` : t.accent,
+                border: "none", cursor: loading || !input.trim() ? "not-allowed" : "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "16px", color: "#fff", transition: "background 0.2s",
+              }}
+            >↑</button>
+          </div>
+        </>
+      )}
+      <style>{`@keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-6px); } }`}</style>
+    </div>
+  );
 }
 
 // ─── EXPORT BUTTON ────────────────────────────────────────────────────────────

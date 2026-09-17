@@ -3,14 +3,29 @@ import { useNavigate } from "react-router-dom";
 
 const AuthContext = createContext(null);
 const BACKEND = "https://billing-backend-tawny.vercel.app";
+const MAX_TIMEOUT = 2147483647; // setTimeout's 32-bit signed int limit (~24.8 days)
+
+// ── Decode a JWT's payload without any extra library ─────────────────────
+function decodeJwtExpiry(token) {
+  try {
+    const payload = token.split(".")[1];
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const { exp } = JSON.parse(json);
+    return exp ? exp * 1000 : null; // convert seconds → ms
+  } catch {
+    return null;
+  }
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [suspendedInfo, setSuspendedInfo] = useState(null); // { reason }
+  const [sessionExpired, setSessionExpired] = useState(false);
   const navigate = useNavigate();
   const pollRef = useRef(null);
+  const expiryTimerRef = useRef(null);
 
   useEffect(() => {
     const savedToken = localStorage.getItem("token");
@@ -30,32 +45,80 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setToken(null);
     setUser(null);
+    navigate("/", { replace: true });
   };
 
   const handleSuspension = (reason) => {
     logout();
     setSuspendedInfo({ reason: reason || "" });
-    navigate("/", { replace: true });
   };
 
-  // ── GLOBAL FETCH WRAPPER — kisi bhi authenticated API response mein
-  // SHOP_SUSPENDED code aaye to turant session clear + modal + redirect.
-  // Isse har page ka fetch call automatically cover ho jata hai. ──────
+  const handleSessionExpired = () => {
+    logout();
+    setSessionExpired(true);
+  };
+
+  // ── PROACTIVE EXPIRY TIMER ────────────────────────────────────────────
+  // Decodes the JWT's `exp` and schedules auto-logout for the exact moment
+  // it expires — no need to wait for an API call to fail first.
+  useEffect(() => {
+    if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
+    if (!token) return;
+
+    const expiryMs = decodeJwtExpiry(token);
+    if (!expiryMs) return; // couldn't decode — global 401 handler below still covers us
+
+    const arm = () => {
+      const msLeft = expiryMs - Date.now();
+      if (msLeft <= 0) {
+        handleSessionExpired();
+        return;
+      }
+      // setTimeout can't handle delays longer than ~24.8 days — chain if needed
+      const delay = Math.min(msLeft, MAX_TIMEOUT);
+      expiryTimerRef.current = setTimeout(() => {
+        if (Date.now() >= expiryMs) handleSessionExpired();
+        else arm();
+      }, delay);
+    };
+    arm();
+
+    return () => clearTimeout(expiryTimerRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // ── GLOBAL FETCH WRAPPER ──────────────────────────────────────────────
+  // Covers every authenticated request app-wide (including useApi.js, since
+  // it calls the global `fetch`, which this patches):
+  //   • 401 on any request that carried a Bearer token → session expired
+  //   • 403 with SHOP_SUSPENDED code → suspension modal
+  // The 401 check only fires for requests that actually sent an
+  // Authorization header, so a wrong-password 401 on /auth/login (no token
+  // attached) never gets mistaken for an expired session.
   useEffect(() => {
     const originalFetch = window.fetch;
     window.fetch = async (...args) => {
       const response = await originalFetch(...args);
       try {
         const url = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
-        if (url.startsWith(BACKEND) && response.status === 403) {
-          const clone = response.clone();
-          const data = await clone.json().catch(() => null);
-          if (data?.code === "SHOP_SUSPENDED") {
-            handleSuspension(data.reason);
+        const reqInit = (typeof args[1] === "object" && args[1]) || {};
+        const headers = reqInit.headers || {};
+        const hadAuthHeader = !!(headers.Authorization || headers.authorization);
+
+        if (url.startsWith(BACKEND)) {
+          if (response.status === 401 && hadAuthHeader) {
+            handleSessionExpired();
+          } else if (response.status === 403) {
+            const clone = response.clone();
+            const data = await clone.json().catch(() => null);
+            if (data?.code === "SHOP_SUSPENDED") {
+              handleSuspension(data.reason);
+            }
           }
         }
       } catch {
@@ -68,7 +131,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ── POLLING — agar user kisi page pe idle baitha hai (koi fetch nahi
-  // ho rahi), tab bhi 45 sec ke andar suspend detect ho jaaye ─────────
+  // ho rahi), tab bhi 45 sec ke andar suspend/expiry detect ho jaaye ────
   useEffect(() => {
     if (!token) {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -79,7 +142,7 @@ export function AuthProvider({ children }) {
         await fetch(`${BACKEND}/api/settings/ping`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        // fetch wrapper upar already 403+SHOP_SUSPENDED handle kar dega
+        // fetch wrapper upar already 401/403+SHOP_SUSPENDED handle kar dega
       } catch {
         // network error, ignore
       }
@@ -205,6 +268,9 @@ export function AuthProvider({ children }) {
           onClose={() => setSuspendedInfo(null)}
         />
       )}
+      {sessionExpired && (
+        <SessionExpiredModal onClose={() => setSessionExpired(false)} />
+      )}
     </AuthContext.Provider>
   );
 }
@@ -229,6 +295,35 @@ function SuspendedModal({ reason, onClose }) {
             Reason: {reason}
           </p>
         )}
+        <button
+          onClick={onClose}
+          style={{
+            marginTop: 20, padding: "10px 24px", borderRadius: 10, border: "none",
+            background: "#111", color: "#fff", fontWeight: 700, fontSize: 13.5, cursor: "pointer",
+          }}
+        >
+          OK
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SessionExpiredModal({ onClose }) {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.6)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+    }}>
+      <div style={{
+        background: "#fff", borderRadius: 16, padding: "28px 24px", maxWidth: 380,
+        width: "100%", textAlign: "center", boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
+      }}>
+        <div style={{ fontSize: 40, marginBottom: 10 }}>🔒</div>
+        <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 8px" }}>Session Expired</h2>
+        <p style={{ fontSize: 13.5, color: "#555", margin: "0 0 4px", lineHeight: 1.5 }}>
+          You've been logged out for security. Please log in again to continue.
+        </p>
         <button
           onClick={onClose}
           style={{

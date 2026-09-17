@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useTheme } from "../components/ThemeContext";
 import { useNotifications } from "../components/NotificationContext";
 
@@ -52,7 +52,34 @@ function timeAgo(dateStr) {
     return `${days}d ago`;
 }
 
-// ─── STAT PILL — now a clickable filter, not just a display ───────────────
+// ─── DEDUPE — group repeated notifications of the same type+product ───────
+function dedupeNotifications(list) {
+    const map = new Map();
+
+    for (const n of list) {
+        const key = `${n.type}::${n.productId || n.taskId || n.title || n.message}`;
+        if (!map.has(key)) {
+            map.set(key, { ...n, _count: 1, _ids: [n._id] });
+        } else {
+            const existing = map.get(key);
+            existing._count += 1;
+            existing._ids.push(n._id);
+            if (new Date(n.createdAt) > new Date(existing.createdAt)) {
+                existing.createdAt = n.createdAt;
+                existing.read = n.read;
+                existing._id = n._id; // primary id — used for markAsRead / suggestion fetch
+                if (n.aiSuggestion) existing.aiSuggestion = n.aiSuggestion;
+            }
+            if (!n.read) existing.read = false;
+        }
+    }
+
+    return Array.from(map.values()).sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
+}
+
+// ─── STAT PILL ──────────────────────────────────────────────────────────
 function StatPill({ label, value, color, bg, icon, onClick, isActive }) {
     return (
         <button
@@ -129,6 +156,52 @@ function SkeletonCard({ delay }) {
     );
 }
 
+// ─── CONFIRM MODAL — reused for "Clear all" and single delete ─────────────
+function ConfirmModal({ t, message, confirmLabel = "Okay", onCancel, onConfirm }) {
+    return (
+        <div
+            onClick={onCancel}
+            style={{
+                position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                zIndex: 1000, animation: "fade-in 0.15s ease both",
+            }}
+        >
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    background: t.bgCard, border: `1px solid ${t.border}`,
+                    borderRadius: 16, padding: "22px 22px 18px", width: 300,
+                    boxShadow: "0 12px 32px -8px rgba(0,0,0,0.35)",
+                }}
+            >
+                <p style={{
+                    fontFamily: "'DM Sans', sans-serif", fontSize: 14, fontWeight: 600,
+                    color: t.textPrimary, margin: "0 0 18px",
+                }}>{message}</p>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                    <button
+                        onClick={onCancel}
+                        style={{
+                            padding: "8px 14px", borderRadius: 9, fontSize: 12, fontWeight: 600,
+                            border: `1.5px solid ${t.border}`, background: "transparent",
+                            color: t.textMuted, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+                        }}
+                    >Cancel</button>
+                    <button
+                        onClick={onConfirm}
+                        style={{
+                            padding: "8px 14px", borderRadius: 9, fontSize: 12, fontWeight: 700,
+                            border: "none", background: "#dc2626", color: "#fff",
+                            cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+                        }}
+                    >{confirmLabel}</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── STYLES (injected once) ─────────────────────────────────────────────────
 const responsiveStyles = `
   @media (max-width: 640px) {
@@ -147,6 +220,7 @@ const responsiveStyles = `
     .notif-meta { flex-direction: row !important; align-items: center !important; gap: 10px !important; }
     .notif-title { font-size: 13px !important; }
     .notif-message { font-size: 12px !important; }
+    .notif-delete-btn { opacity: 1 !important; }
   }
   @media (min-width: 641px) and (max-width: 900px) {
     .notif-grid { grid-template-columns: 160px 1fr !important; }
@@ -154,6 +228,9 @@ const responsiveStyles = `
 
   .notif-card { animation: fade-in 0.35s ease both; }
   .notif-card:hover { transform: translateY(-1px); box-shadow: 0 6px 18px -8px rgba(0,0,0,0.18); }
+  .notif-card:hover .notif-delete-btn { opacity: 1; }
+  .notif-delete-btn { opacity: 0; transition: opacity 0.15s, background 0.15s; }
+  .notif-delete-btn:hover { background: #fee2e2 !important; }
   .notif-filter-sidebar { scrollbar-width: none; }
   .notif-filter-sidebar::-webkit-scrollbar { display: none; }
   .notif-filter-btn { position: relative; }
@@ -186,27 +263,34 @@ const responsiveStyles = `
 
 export default function Notifications() {
     const { t } = useTheme();
-    const { notifications, unreadCount, loading, markAsRead, markAllAsRead, clearAll, scanStock } = useNotifications();
-    const [filter, setFilter] = useState("all");       // type filter: all | outOfStock | lowStock | slowMoving
-    const [readFilter, setReadFilter] = useState("all"); // read-state filter: all | unread | read
+    const {
+        notifications, unreadCount, loading,
+        markAsRead, markAllAsRead, clearAll,
+        deleteNotification, deleteMany,
+        scanStock, getSuggestion, suggestionLoading,
+    } = useNotifications();
+
+    const [filter, setFilter] = useState("all");
+    const [readFilter, setReadFilter] = useState("all");
     const [hoveredId, setHoveredId] = useState(null);
     const [rescanning, setRescanning] = useState(false);
+    const [expandedKey, setExpandedKey] = useState(null);
+    const [confirmClear, setConfirmClear] = useState(false);
+    const [confirmDeleteKey, setConfirmDeleteKey] = useState(null);
 
     const safeNotifications = Array.isArray(notifications) ? notifications : [];
+    const deduped = useMemo(() => dedupeNotifications(safeNotifications), [safeNotifications]);
 
-    // Both filters apply together — e.g. "Low Stock" tab + "Unread" stat
-    // shows only unread low-stock notifications.
-    const filtered = safeNotifications
+    const filtered = deduped
         .filter((n) => filter === "all" || n.type === filter)
         .filter((n) => readFilter === "all" || (readFilter === "unread" ? !n.read : n.read));
 
-    const readCount = safeNotifications.length - unreadCount;
+    const readCount = deduped.filter((n) => n.read).length;
+    const dedupedUnreadCount = deduped.filter((n) => !n.read).length;
     const tabs = Object.keys(TYPE_LABELS);
 
     const countFor = (type) =>
-        type === "all"
-            ? safeNotifications.length
-            : safeNotifications.filter((n) => n.type === type).length;
+        type === "all" ? deduped.length : deduped.filter((n) => n.type === type).length;
 
     const handleRescan = async () => {
         setRescanning(true);
@@ -222,12 +306,45 @@ export default function Notifications() {
         setReadFilter("all");
     };
 
-    const toggleReadFilter = (value) => {
-        setReadFilter((prev) => (prev === value ? "all" : value));
+    const toggleReadFilter = (value) => setReadFilter((prev) => (prev === value ? "all" : value));
+    const toggleTypeFilter = (value) => setFilter((prev) => (prev === value ? "all" : value));
+
+    const groupKey = (n) => `${n.type}::${n.productId || n.taskId || n.title || n.message}`;
+
+    const handleCardClick = (n) => {
+        const key = groupKey(n);
+        const willExpand = expandedKey !== key;
+        setExpandedKey(willExpand ? key : null);
+
+        if (!n.read) {
+            (n._ids || [n._id]).forEach((id) => markAsRead(id));
+        }
+        if (willExpand && !n.aiSuggestion) {
+            getSuggestion(n._id);
+        }
     };
 
-    const toggleTypeFilter = (value) => {
-        setFilter((prev) => (prev === value ? "all" : value));
+    const handleDeleteClick = (e, n) => {
+        e.stopPropagation();
+        setConfirmDeleteKey(groupKey(n));
+    };
+
+    const pendingDeleteNotif = deduped.find((n) => groupKey(n) === confirmDeleteKey);
+
+    const handleConfirmDelete = () => {
+        if (pendingDeleteNotif) {
+            const ids = pendingDeleteNotif._ids || [pendingDeleteNotif._id];
+            if (ids.length > 1) deleteMany(ids);
+            else deleteNotification(ids[0]);
+        }
+        setConfirmDeleteKey(null);
+        setExpandedKey(null);
+    };
+
+    const handleConfirmClear = () => {
+        clearAll();
+        setConfirmClear(false);
+        setExpandedKey(null);
     };
 
     const cssVars = {
@@ -259,8 +376,8 @@ export default function Notifications() {
                         <p style={{ fontSize: 13, color: t.textMuted, marginTop: 5 }}>
                             {loading
                                 ? "Checking your stock…"
-                                : unreadCount > 0
-                                    ? `You have ${unreadCount} unread notification${unreadCount > 1 ? "s" : ""}`
+                                : dedupedUnreadCount > 0
+                                    ? `You have ${dedupedUnreadCount} unread notification${dedupedUnreadCount > 1 ? "s" : ""}`
                                     : "You're all caught up — no unread notifications 🎉"}
                         </p>
                     </div>
@@ -285,7 +402,7 @@ export default function Notifications() {
                             }}>🔄</span>
                             {rescanning ? "Scanning…" : "Rescan Stock"}
                         </button>
-                        {unreadCount > 0 && (
+                        {dedupedUnreadCount > 0 && (
                             <button onClick={markAllAsRead} style={{
                                 fontSize: 12, fontWeight: 600, padding: "9px 16px", borderRadius: 10,
                                 border: `1.5px solid ${t.accent}`, color: t.accent,
@@ -294,7 +411,7 @@ export default function Notifications() {
                             }}>✓ Mark all read</button>
                         )}
                         {safeNotifications.length > 0 && (
-                            <button onClick={clearAll} style={{
+                            <button onClick={() => setConfirmClear(true)} style={{
                                 fontSize: 12, fontWeight: 600, padding: "9px 16px", borderRadius: 10,
                                 border: `1.5px solid ${t.border}`, color: t.textMuted,
                                 background: "transparent", cursor: "pointer",
@@ -304,7 +421,7 @@ export default function Notifications() {
                     </div>
                 </div>
 
-                {/* ── STATS ROW — now clickable filters too ── */}
+                {/* ── STATS ROW ── */}
                 <div className="notif-stats-row" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {loading ? (
                         <>
@@ -313,13 +430,13 @@ export default function Notifications() {
                     ) : (
                         <>
                             <StatPill
-                                label="Total" value={safeNotifications.length}
+                                label="Total" value={deduped.length}
                                 color={t.accent} bg={`${t.accent}12`} icon="🔔"
                                 onClick={resetAllFilters}
                                 isActive={filter === "all" && readFilter === "all"}
                             />
                             <StatPill
-                                label="Unread" value={unreadCount}
+                                label="Unread" value={dedupedUnreadCount}
                                 color="#d97706" bg="#fef3c7" icon="✉️"
                                 onClick={() => toggleReadFilter("unread")}
                                 isActive={readFilter === "unread"}
@@ -345,7 +462,7 @@ export default function Notifications() {
                     display: "grid", gridTemplateColumns: "200px 1fr", gap: 16, alignItems: "start",
                 }}>
 
-                    {/* LEFT — Filter sidebar (type only) */}
+                    {/* LEFT — Filter sidebar */}
                     <div className="notif-filter-sidebar" style={{
                         position: "sticky", top: 88,
                         background: t.bgCard, border: `1px solid ${t.border}`,
@@ -448,13 +565,17 @@ export default function Notifications() {
                         ) : (
                             filtered.map((n, i) => {
                                 const typeStyle = TYPE_COLORS[n.type] || { color: t.accent, bg: `${t.accent}18` };
-                                const isHovered = hoveredId === n._id;
+                                const key = groupKey(n);
+                                const isHovered = hoveredId === key;
+                                const isExpanded = expandedKey === key;
+                                const isFetchingSuggestion = suggestionLoading?.[n._id];
+
                                 return (
                                     <div
-                                        key={n._id}
+                                        key={key}
                                         className="notif-card"
-                                        onClick={() => !n.read && markAsRead(n._id)}
-                                        onMouseEnter={() => setHoveredId(n._id)}
+                                        onClick={() => handleCardClick(n)}
+                                        onMouseEnter={() => setHoveredId(key)}
                                         onMouseLeave={() => setHoveredId(null)}
                                         style={{
                                             borderRadius: 14,
@@ -462,7 +583,7 @@ export default function Notifications() {
                                             background: isHovered
                                                 ? `${t.accent}08`
                                                 : n.read ? t.bgCard : `${t.accent}05`,
-                                            cursor: n.read ? "default" : "pointer",
+                                            cursor: "pointer",
                                             transition: "background 0.15s, transform 0.15s, box-shadow 0.15s, border-color 0.15s",
                                             position: "relative",
                                             overflow: "hidden",
@@ -500,18 +621,53 @@ export default function Notifications() {
                                                         textTransform: "uppercase", letterSpacing: "0.07em",
                                                         flexShrink: 0,
                                                     }}>{TYPE_LABELS[n.type] || n.type}</span>
+                                                    {n._count > 1 && (
+                                                        <span style={{
+                                                            fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 99,
+                                                            color: t.textMuted, background: `${t.border}55`,
+                                                            flexShrink: 0,
+                                                        }}>×{n._count}</span>
+                                                    )}
                                                 </div>
                                                 <p className="notif-message" style={{
                                                     fontSize: 13, color: t.textMuted, lineHeight: 1.55,
                                                     fontFamily: "'DM Sans', sans-serif", margin: 0,
                                                 }}>{n.message}</p>
+
+                                                {isExpanded && (
+                                                    <div style={{
+                                                        marginTop: 10, paddingTop: 10,
+                                                        borderTop: `1px dashed ${t.border}`,
+                                                        fontSize: 12.5, color: t.textPrimary,
+                                                        fontFamily: "'DM Sans', sans-serif", lineHeight: 1.6,
+                                                    }}>
+                                                        <span style={{ fontWeight: 700 }}>💡 Suggestion: </span>
+                                                        {isFetchingSuggestion
+                                                            ? <span style={{ color: t.textMuted, fontStyle: "italic" }}>Thinking…</span>
+                                                            : (n.aiSuggestion || "No suggestion available.")}
+                                                    </div>
+                                                )}
                                             </div>
 
                                             <div className="notif-meta" style={{
                                                 display: "flex", flexDirection: "column",
                                                 alignItems: "flex-end", gap: 8, flexShrink: 0,
                                             }}>
-                                                <span style={{ fontSize: 11, color: t.textMuted, whiteSpace: "nowrap" }}>{timeAgo(n.createdAt)}</span>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                                    <span style={{ fontSize: 11, color: t.textMuted, whiteSpace: "nowrap" }}>{timeAgo(n.createdAt)}</span>
+                                                    <button
+                                                        className="notif-delete-btn"
+                                                        onClick={(e) => handleDeleteClick(e, n)}
+                                                        title="Delete"
+                                                        style={{
+                                                            width: 22, height: 22, borderRadius: 7,
+                                                            border: "none", background: "transparent",
+                                                            color: "#dc2626", cursor: "pointer",
+                                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                                            fontSize: 13, flexShrink: 0,
+                                                        }}
+                                                    >🗑️</button>
+                                                </div>
                                                 <div style={{
                                                     width: 9, height: 9, borderRadius: "50%",
                                                     background: n.read ? "transparent" : t.accent,
@@ -528,6 +684,29 @@ export default function Notifications() {
                     </div>
                 </div>
             </div>
+
+            {confirmClear && (
+                <ConfirmModal
+                    t={t}
+                    message="Are you sure you want to clear all notifications?"
+                    onCancel={() => setConfirmClear(false)}
+                    onConfirm={handleConfirmClear}
+                />
+            )}
+
+            {confirmDeleteKey && (
+                <ConfirmModal
+                    t={t}
+                    message={
+                        pendingDeleteNotif?._count > 1
+                            ? `Delete all ${pendingDeleteNotif._count} occurrences of this notification?`
+                            : "Delete this notification?"
+                    }
+                    confirmLabel="Delete"
+                    onCancel={() => setConfirmDeleteKey(null)}
+                    onConfirm={handleConfirmDelete}
+                />
+            )}
         </>
     );
 }

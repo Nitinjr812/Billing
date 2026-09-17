@@ -4,12 +4,17 @@ import { useAuth } from "../context/AuthContext";
 import useApi from "../hooks/useApi"; // adjust this path to wherever useApi.js actually lives in your project
 
 // ─── PLAN DATA ────────────────────────────────────────────────────────────────
+// NOTE: monthlyPrice / yearlyPrice here MUST exactly match routes/payments.js
+// PRICING object on the backend. The backend is the source of truth for what
+// actually gets charged — this is just what's displayed. If you change a
+// price, change it in BOTH files or the UI will show one number and Cashfree
+// will charge another.
 const PLANS = [
   {
     id: "starter",
     name: "Starter",
     tagline: "Perfect for small businesses",
-    monthlyPrice: 1, // ⚠️ looks like a test value — replace with the real starter price
+    monthlyPrice: 499,
     yearlyPrice: 399,
     color: "#6366f1",
     colorBg: "#6366f115",
@@ -389,7 +394,7 @@ export default function Subscription() {
   const [loadingPlanId, setLoadingPlanId] = useState(null);
   const [error, setError] = useState(null);
 
-  // ── Real subscription data from the backend (replaces old dummy state) ──
+  // ── Real subscription data from the backend ──
   const [subscription, setSubscription] = useState(null); // { plan, monthlyAmount, discountPercent, renewalHistory }
   const [subLoading, setSubLoading] = useState(true);
 
@@ -414,8 +419,10 @@ export default function Subscription() {
   }, []);
 
   // ── If we just came back from a Cashfree redirect (?order_id=...),
-  // re-check that order's status and refresh the subscription once the
-  // webhook has had a moment to land. ─────────────────────────────────
+  // re-check that order's status (the backend now also updates the
+  // subscription itself as a fallback in this same call — see
+  // routes/payments.js order-status route) and refresh the subscription
+  // once that's had a moment to land. ─────────────────────────────────
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const orderId = params.get("order_id");
@@ -428,7 +435,7 @@ export default function Subscription() {
       } catch (err) {
         console.error("Order status check failed:", err);
       } finally {
-        // give the webhook a moment, then refresh regardless of the check above
+        // give the webhook/fallback a moment, then refresh regardless of the check above
         setTimeout(() => {
           if (!cancelled) fetchSubscription();
         }, 2000);
