@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../components/ThemeContext";
 import { AuthShell, AnimatedInput, PasswordInput, MoneyButton } from "./authUi";
+import ShopVerificationForm from "./ShopVerification";
 
 export default function Signup() {
   const { signupOwner, signupStaff, verifySignupOtp, resendOtp } = useAuth();
@@ -15,7 +16,7 @@ export default function Signup() {
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const [step, setStep] = useState("form"); // "form" | "otp"
+  const [step, setStep] = useState("form"); // "form" | "otp" | "verify"
   const [pendingEmail, setPendingEmail] = useState("");
   const [pendingShopId, setPendingShopId] = useState("");
   const [otp, setOtp] = useState("");
@@ -41,7 +42,7 @@ export default function Signup() {
         setPendingEmail(data.email);
       }
       setStep("otp");
-      setInfo("OTP email pe bheja gaya hai");
+      setInfo("OTP has been sent to your email");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -55,7 +56,12 @@ export default function Signup() {
     setLoading(true);
     try {
       await verifySignupOtp(pendingEmail, otp);
-      navigate("/dashboard");
+      if (tab === "owner") {
+        // New shop owners must submit shop details for admin approval
+        setStep("verify");
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -68,7 +74,7 @@ export default function Signup() {
     setError("");
     try {
       await resendOtp(pendingEmail);
-      setInfo("OTP dobara bheja gaya");
+      setInfo("OTP sent again");
       setResendCooldown(30);
       const iv = setInterval(() => {
         setResendCooldown((c) => {
@@ -81,7 +87,30 @@ export default function Signup() {
     }
   };
 
-  /* ── OTP verification screen (owner + staff dono ke liye common) ── */
+  /* ── Shop verification step (owners only) ── */
+  if (step === "verify") {
+    return (
+      <AuthShell eyebrow="Shop verification" badges={false}>
+        {pendingShopId && (
+          <div style={{
+            background: `linear-gradient(135deg, ${t.accent}14, transparent)`,
+            border: `1px dashed ${t.accent}`, borderRadius: "12px",
+            padding: "12px", marginBottom: "18px", textAlign: "center",
+          }}>
+            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: t.textMuted, margin: "0 0 4px" }}>
+              Your Shop ID
+            </p>
+            <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: "18px", color: t.accent, margin: 0, wordBreak: "break-all" }}>
+              {pendingShopId}
+            </p>
+          </div>
+        )}
+        <ShopVerificationForm onDone={() => navigate("/dashboard")} />
+      </AuthShell>
+    );
+  }
+
+  /* ── OTP verification screen (owner + staff) ── */
   if (step === "otp") {
     return (
       <AuthShell eyebrow="One last step" badges={false}>
@@ -89,7 +118,7 @@ export default function Signup() {
           Verify your email
         </h2>
         <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: t.textMuted, marginBottom: "22px" }}>
-          {pendingEmail} pe bheja gaya OTP daalo
+          Enter the OTP sent to {pendingEmail}
         </p>
 
         {pendingShopId && (
@@ -130,7 +159,7 @@ export default function Signup() {
         </form>
 
         <p style={{ fontSize: "12px", color: t.textMuted, marginTop: "18px", textAlign: "center", fontFamily: "'DM Sans', sans-serif" }}>
-          OTP nahi mila?{" "}
+          Didn't get the OTP?{" "}
           <button
             onClick={handleResend}
             disabled={resendCooldown > 0}
@@ -153,7 +182,7 @@ export default function Signup() {
         Create your account
       </h1>
       <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: t.textMuted, marginBottom: "22px" }}>
-        Naya shop banao ya apni team join karo
+        Create a new shop or join your team
       </p>
 
       {/* Tabs */}
@@ -186,7 +215,7 @@ export default function Signup() {
         {tab === "owner" ? (
           <AnimatedInput label="Shop Name" placeholder="Sharma General Store" value={form.shopName} onChange={update("shopName")} required />
         ) : (
-          <AnimatedInput label="Shop ID" placeholder="Owner se lo" value={form.shopId} onChange={update("shopId")} required />
+          <AnimatedInput label="Shop ID" placeholder="Get it from your shop owner" value={form.shopId} onChange={update("shopId")} required />
         )}
 
         {error && (

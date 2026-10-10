@@ -26,7 +26,9 @@ import VerifyEmail from "./pages/VerifyEmail";
 import LandingPage from "./pages/Landingpage";
 import SuperAdminLogin from "./pages/SuperAdminLogin";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
-import Tasks from "../src/pages/Tasks";
+import Tasks from "./pages/Tasks";
+import ReportIssue from "./pages/ReportIssue";
+import { ApprovalGate } from "./pages/ShopVerification";
 import SplashScreen from "./components/SplashScreen";
 import { registerServiceWorker } from "./registerServiceWorker";
 registerServiceWorker();
@@ -90,14 +92,14 @@ function AppInner() {
 
   return (
     <>
-    {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       <GlobalScrollbar />
       <Routes>
         <Route path="/" element={<RootRoute />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/verify-email/:token" element={<VerifyEmail />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/forgot-passwo`rd" element={<ForgotPassword />} />
 
         {/* ─ Super Admin routes (secret, standalone) ─ */}
         <Route path="/sa-x7k9q2-login" element={<SuperAdminLogin />} />
@@ -109,32 +111,36 @@ function AppInner() {
             </SuperAdminProtectedRoute>
           }
         />
- 
+
+        {/* ─ Shop app: login required + shop must be approved by admin ─ */}
         <Route
           path="/*"
           element={
             <ProtectedRoute>
-              <div className="min-h-screen" style={{ background: t.bgPage }}>
-                <Navbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-                <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-                <main className="pt-20 px-4 md:px-8 pb-10 max-w-7xl mx-auto">
-                  <Routes>
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/subscription" element={<Subscription />} />
-                    <Route path="/inventory" element={<Inventory />} />
-                    <Route path="/billing" element={<Orders />} />
-                    <Route path="/tasks" element={<Tasks />} />
-                    <Route path="/customers" element={<Customers />} />
-                    <Route path="/stocks" element={<Stocks />} />
-                    <Route path="/reports" element={<Reports />} />
-                    <Route path="/notifications" element={<Notifications />} />
-                    <Route path="/settings" element={<Settings />} />
-                    <Route path="/suppliers" element={<Suppliers />} />
-                    <Route path="/discount-permissions" element={<DiscountPermissions />} />
-                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                  </Routes>
-                </main>
-              </div>
+              <ApprovalGate>
+                <div className="min-h-screen" style={{ background: t.bgPage }}>
+                  <Navbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+                  <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+                  <main className="pt-20 px-4 md:px-8 pb-10 max-w-7xl mx-auto">
+                    <Routes>
+                      <Route path="/dashboard" element={<Dashboard />} />
+                      <Route path="/subscription" element={<Subscription />} />
+                      <Route path="/inventory" element={<Inventory />} />
+                      <Route path="/billing" element={<Orders />} />
+                      <Route path="/tasks" element={<Tasks />} />
+                      <Route path="/customers" element={<Customers />} />
+                      <Route path="/stocks" element={<Stocks />} />
+                      <Route path="/reports" element={<Reports />} />
+                      <Route path="/notifications" element={<Notifications />} />
+                      <Route path="/settings" element={<Settings />} />
+                      <Route path="/suppliers" element={<Suppliers />} />
+                      <Route path="/report-issue" element={<ReportIssue />} />
+                      <Route path="/discount-permissions" element={<DiscountPermissions />} />
+                      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                    </Routes>
+                  </main>
+                </div>
+              </ApprovalGate>
             </ProtectedRoute>
           }
         />
