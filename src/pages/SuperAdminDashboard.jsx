@@ -14,7 +14,8 @@ import SuperAdminApprovals from "./SuperAdminApprovals";
    PATCH /shops/:shopId/status · DELETE /shops/:shopId
    ── NEW (security) ──
    GET /security/db-status · /security/sessions · /security/alerts · /security/audit
-   POST /security/sessions/:id/revoke · POST /security/sessions/revoke-others · PATCH /security/alerts/:id  */
+   POST /security/sessions/:id/revoke · POST /security/sessions/revoke-others · PATCH /security/alerts/:id
+   GET /security/insights · /security/insights/shop/:shopId · /security/summary · /security/logins · /security/blocked-ips · POST /security/blocked-ips {ip, reason} · DELETE /security/blocked-ips/:id  */
 
 const POLL_MS = 60000;
 
@@ -36,6 +37,7 @@ const ICONS = {
   check: <path d="M20 6L9 17l-5-5" />,
   db: <><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" /><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" /></>,
   shield: <path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z" />,
+  chart: <><path d="M3 3v18h18" /><path d="M7 15l4-4 3 3 5-6" /></>,
   list: <><path d="M8 6h13M8 12h13M8 18h13" /><path d="M3 6h.01M3 12h.01M3 18h.01" /></>,
 };
 
@@ -155,6 +157,7 @@ const styles = `
 
 const TABS = [
   { id: "overview", label: "Overview", icon: "grid" },
+  { id: "insights", label: "Data & insights", icon: "chart" },
   { id: "shops", label: "Shops", icon: "shop" },
   { id: "approvals", label: "Approvals", icon: "check" },
   { id: "reports", label: "Customer reports", icon: "flag" },
@@ -318,6 +321,7 @@ export default function SuperAdminDashboard() {
 
       <div key={tab} className="sa-fade-in">
         {tab === "overview" && <OverviewTab {...ctx} />}
+        {tab === "insights" && <InsightsTab {...ctx} />}
         {tab === "shops" && <ShopsTab {...ctx} />}
         {tab === "approvals" && <SuperAdminApprovals />}
         {tab === "reports" && <ReportsTab {...ctx} />}
@@ -840,6 +844,303 @@ function AnnounceTab({ t, api, toast, version, analyticsQ, shopsQ }) {
   );
 }
 
+/* ═════════════════ DATA & INSIGHTS ═════════════════ */
+const csvCell = (v) => {
+  let s = String(v ?? "");
+  if (/^[=+\-@]/.test(s)) s = `'${s}`; // spreadsheet formula injection se bachav
+  return `"${s.replace(/"/g, '""')}"`;
+};
+const downloadCsv = (name, rows) => {
+  if (!rows.length) return;
+  const cols = Object.keys(rows[0]);
+  const text = "\ufeff" + [cols.map(csvCell).join(","), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(","))].join("\n");
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+function Kpi({ t, label, value, sub, color }) {
+  return (
+    <div style={{ borderRadius: 16, border: `1px solid ${t.border}`, background: t.bgCard, padding: "16px 18px", minWidth: 0 }}>
+      <p style={{ margin: 0, fontSize: 11, color: t.textMuted, fontWeight: 500 }}>{label}</p>
+      <p style={{ margin: "4px 0 0", fontSize: 21, fontWeight: 800, fontFamily: "'Syne', sans-serif", color: color || t.textPrimary, overflow: "hidden", textOverflow: "ellipsis" }}>{value}</p>
+      {sub && <p style={{ margin: "3px 0 0", fontSize: 10.5, color: t.textMuted }}>{sub}</p>}
+    </div>
+  );
+}
+
+function BarRow({ t, label, value, max, right, color }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12.5 }}>
+        <span style={{ textTransform: "capitalize", fontWeight: 500 }}>{label}</span>
+        <span style={{ color: t.textMuted, whiteSpace: "nowrap" }}>{right}</span>
+      </div>
+      <div style={{ height: 8, borderRadius: 99, background: t.bgPage, border: `1px solid ${t.borderLight}`, overflow: "hidden" }}>
+        <div style={{ width: `${value > 0 ? Math.max(3, (value / Math.max(1, max)) * 100) : 0}%`, height: "100%", borderRadius: 99, background: color || t.accent }} />
+      </div>
+    </div>
+  );
+}
+
+function ColumnBars({ t, gradient, rows, valueKey, format }) {
+  const max = Math.max(1, ...rows.map((m) => m[valueKey] || 0));
+  if (!rows.some((m) => (m[valueKey] || 0) > 0)) return <p style={{ fontSize: 12.5, color: t.textMuted, margin: 0 }}>Abhi is period ka data nahi hai.</p>;
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 12, height: 150, padding: "8px 4px 0" }}>
+      {rows.map((m, i) => (
+        <div key={`${m.month}-${i}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%", justifyContent: "flex-end" }}>
+          <span style={{ fontSize: 10.5, color: t.textMuted }}>{format(m[valueKey] || 0)}</span>
+          <div style={{ width: "100%", maxWidth: 38, height: `${((m[valueKey] || 0) / max) * 100}%`, minHeight: 4, borderRadius: "8px 8px 3px 3px", background: gradient }} />
+          <span style={{ fontSize: 11, color: t.textMuted }}>{m.month}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InsightsTab({ t, gradient, api, version, shopsQ, analyticsQ, reportsQ, setOpenShopId }) {
+  const payQ = useData(api, "/payments", { dep: version });
+  const monthlyQ = useData(api, "/analytics/monthly", { dep: version });
+  const insQ = useData(api, "/security/insights", { dep: version });
+  const [shopSearch, setShopSearch] = useState("");
+  const [picked, setPicked] = useState(null);
+  const [shopData, setShopData] = useState(null);
+  const [shopErr, setShopErr] = useState("");
+  const [loadingShop, setLoadingShop] = useState(false);
+
+  const shops = shopsQ.data;
+  const an = analyticsQ.data;
+
+  if (shopsQ.error && !shops) return <ErrorBox t={t} message={shopsQ.error} onRetry={shopsQ.reload} />;
+  if (analyticsQ.error && !an) return <ErrorBox t={t} message={analyticsQ.error} onRetry={analyticsQ.reload} />;
+  if (!shops || !an) return <Skeleton t={t} n={4} h={100} />;
+
+  const now = Date.now();
+  const payments = payQ.data || [];
+  const reports = reportsQ.data || [];
+  const planCounts = an.planCounts || {};
+  const planTotal = Math.max(1, Object.values(planCounts).reduce((s, n) => s + n, 0));
+
+  const totalUsers = shops.reduce((s, x) => s + (x.totalUsers || 0), 0);
+  const payingShops = shops.filter((s) => (s.totalRevenue || 0) > 0).length;
+  const arpu = payingShops ? Math.round((an.totalRevenue || 0) / payingShops) : 0;
+  const expired = shops.filter((s) => s.expiresAt && new Date(s.expiresAt).getTime() < now);
+  const expiring = shops
+    .filter((s) => s.expiresAt && s.status === "active" && new Date(s.expiresAt).getTime() >= now && new Date(s.expiresAt).getTime() - now < 7 * 86400000)
+    .sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt));
+
+  const d = new Date();
+  const monthKey = (x) => `${new Date(x).getFullYear()}-${new Date(x).getMonth()}`;
+  const thisKey = `${d.getFullYear()}-${d.getMonth()}`;
+  const lastKey = d.getMonth() === 0 ? `${d.getFullYear() - 1}-11` : `${d.getFullYear()}-${d.getMonth() - 1}`;
+  const thisMonthRev = payments.filter((p) => monthKey(p.createdAt) === thisKey).reduce((s, p) => s + (p.amount || 0), 0);
+  const lastMonthRev = payments.filter((p) => monthKey(p.createdAt) === lastKey).reduce((s, p) => s + (p.amount || 0), 0);
+  const growth = lastMonthRev > 0 ? Math.round(((thisMonthRev - lastMonthRev) / lastMonthRev) * 100) : null;
+
+  const group = (list, keyFn) => {
+    const m = {};
+    list.forEach((p) => { const k = keyFn(p) || "Other"; m[k] = m[k] || { count: 0, amount: 0 }; m[k].count += 1; m[k].amount += p.amount || 0; });
+    return Object.entries(m).sort((a, b) => b[1].amount - a[1].amount);
+  };
+  const byMethod = group(payments, (p) => p.method);
+  const byPlanRev = group(payments, (p) => p.plan);
+  const maxMethod = Math.max(1, ...byMethod.map(([, v]) => v.amount));
+  const maxPlanRev = Math.max(1, ...byPlanRev.map(([, v]) => v.amount));
+
+  const topRevenue = [...shops].sort((a, b) => (b.totalRevenue || 0) - (a.totalRevenue || 0)).slice(0, 5);
+  const topUsers = [...shops].sort((a, b) => (b.totalUsers || 0) - (a.totalUsers || 0)).slice(0, 5);
+  const maxTopRev = Math.max(1, topRevenue[0]?.totalRevenue || 0);
+  const maxTopUsers = Math.max(1, topUsers[0]?.totalUsers || 0);
+
+  const repStatus = { open: 0, in_progress: 0, resolved: 0 };
+  const repPrio = { high: 0, medium: 0, low: 0 };
+  reports.forEach((r) => { if (r.status in repStatus) repStatus[r.status] += 1; if (r.priority in repPrio) repPrio[r.priority] += 1; });
+  const maxRep = Math.max(1, ...Object.values(repStatus), ...Object.values(repPrio));
+
+  const ins = insQ.data;
+  const collections = ins?.collections || [];
+  const maxDocs = Math.max(1, ...collections.map((c) => c.count));
+
+  const sq = shopSearch.trim().toLowerCase();
+  const matches = sq
+    ? shops.filter((s) => (s.shopName || "").toLowerCase().includes(sq) || (s.shopId || "").toLowerCase().includes(sq) || (s.ownerEmail || "").toLowerCase().includes(sq)).slice(0, 6)
+    : [];
+
+  const pickShop = async (s) => {
+    setPicked(s); setShopSearch(""); setShopData(null); setShopErr(""); setLoadingShop(true);
+    try { setShopData(await api(`/security/insights/shop/${encodeURIComponent(s.shopId)}`)); }
+    catch (e) { setShopErr(e.message || "Data load nahi hua"); }
+    finally { setLoadingShop(false); }
+  };
+
+  const exportShops = () => downloadCsv("shops.csv", shops.map((s) => ({
+    shopId: s.shopId, shopName: s.shopName, ownerName: s.ownerName, ownerEmail: s.ownerEmail, plan: s.plan, status: s.status,
+    users: s.totalUsers, totalRevenue: s.totalRevenue, renewals: s.renewalCount, expiresAt: s.expiresAt ? new Date(s.expiresAt).toISOString() : "",
+  })));
+  const exportPayments = () => downloadCsv("payments.csv", payments.map((p) => ({
+    shopId: p.shopId, shopName: p.shopName, plan: p.plan, method: p.method, amount: p.amount, date: new Date(p.createdAt).toISOString(),
+  })));
+  const exportCollections = () => downloadCsv("collections.csv", collections.map((c) => ({ collection: c.name, documents: c.count, sizeBytes: c.size, internal: c.internal ? "yes" : "no" })));
+
+  const field = { flex: 1, minWidth: 0, padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.bgPage, color: t.textPrimary, fontSize: 12.5, outline: "none" };
+  const expBtn = { padding: "8px 14px", borderRadius: 10, fontSize: 12, fontWeight: 700, border: `1px solid ${t.border}`, background: t.bgCard, color: t.textMuted, cursor: "pointer" };
+  const dayLeft = (x) => Math.ceil((new Date(x) - now) / 86400000);
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        <p style={{ margin: 0, fontSize: 12.5, color: t.textMuted }}>Poori SaaS ka snapshot — shops, users, revenue, support aur database.</p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={exportShops} className="sa-btn" style={expBtn}>Export shops CSV</button>
+          <button onClick={exportPayments} disabled={payments.length === 0} className="sa-btn" style={expBtn}>Export payments CSV</button>
+        </div>
+      </div>
+
+      <div className="sa-stats">
+        <Kpi t={t} label="Total shops" value={an.totalShops} sub={`${an.activeCount} active · ${an.suspendedCount} suspended`} />
+        <Kpi t={t} label="Total users (all shops)" value={totalUsers.toLocaleString("en-IN")} sub={shops.length ? `avg ${(totalUsers / shops.length).toFixed(1)} per shop` : ""} />
+        <Kpi t={t} label="Total revenue" value={inr(an.totalRevenue)} sub={`${payments.length} payments recorded`} />
+        <Kpi t={t} label="MRR" value={inr(an.mrr)} sub={`ARR ≈ ${inr((an.mrr || 0) * 12)}`} />
+      </div>
+      <div className="sa-stats">
+        <Kpi t={t} label="Revenue this month" value={inr(thisMonthRev)} sub={growth === null ? "pichle mahine ka data nahi" : `${growth >= 0 ? "+" : ""}${growth}% vs last month`} color={growth !== null && growth < 0 ? t.red : undefined} />
+        <Kpi t={t} label="Paying shops" value={payingShops} sub={`${Math.max(0, shops.length - payingShops)} abhi tak free / unpaid`} />
+        <Kpi t={t} label="Avg revenue / paying shop" value={inr(arpu)} />
+        <Kpi t={t} label="Plan health" value={`${expiring.length} expiring`} sub={`${expired.length} expired · ${(an.loyalShops || []).length} loyal`} color={expiring.length + expired.length > 0 ? t.orange : undefined} />
+      </div>
+
+      <div className="sa-two">
+        <Panel t={t} title="Revenue, last 6 months">
+          {monthlyQ.data === null && !monthlyQ.error ? <Skeleton t={t} n={1} h={150} /> : monthlyQ.error && !monthlyQ.data ? <ErrorBox t={t} message={monthlyQ.error} onRetry={monthlyQ.reload} compact /> : <ColumnBars t={t} gradient={gradient} rows={monthlyQ.data || []} valueKey="amount" format={inr} />}
+        </Panel>
+        <Panel t={t} title="New shops, last 6 months">
+          {insQ.data === null && !insQ.error ? <Skeleton t={t} n={1} h={150} /> : (ins?.signupsByMonth || []).length === 0 ? <p style={{ fontSize: 12.5, color: t.textMuted, margin: 0 }}>Signup data load nahi ho paya.</p> : <ColumnBars t={t} gradient={gradient} rows={ins.signupsByMonth} valueKey="count" format={(n) => n} />}
+        </Panel>
+      </div>
+
+      <div className="sa-two">
+        <Panel t={t} title="Plan distribution">
+          {Object.keys(planCounts).length === 0 ? <p style={{ fontSize: 12.5, color: t.textMuted, margin: 0 }}>Koi plan data nahi.</p> : Object.entries(planCounts).map(([plan, n]) => (
+            <BarRow key={plan} t={t} label={plan} value={n} max={planTotal} right={`${n} shops · ${Math.round((n / planTotal) * 100)}%`} />
+          ))}
+        </Panel>
+        <Panel t={t} title="Revenue by plan">
+          {byPlanRev.length === 0 ? <p style={{ fontSize: 12.5, color: t.textMuted, margin: 0 }}>Koi payment nahi.</p> : byPlanRev.map(([plan, v]) => (
+            <BarRow key={plan} t={t} label={plan} value={v.amount} max={maxPlanRev} right={`${inr(v.amount)} · ${v.count} payments`} color={t.green} />
+          ))}
+        </Panel>
+      </div>
+
+      <div className="sa-two">
+        <Panel t={t} title="Payment methods">
+          {byMethod.length === 0 ? <p style={{ fontSize: 12.5, color: t.textMuted, margin: 0 }}>Koi payment nahi.</p> : byMethod.map(([m, v]) => (
+            <BarRow key={m} t={t} label={m} value={v.amount} max={maxMethod} right={`${inr(v.amount)} · ${v.count}`} color={t.orange} />
+          ))}
+        </Panel>
+        <Panel t={t} title="Customer support">
+          <p style={{ margin: 0, fontSize: 12, color: t.textMuted }}>{reports.length} reports total</p>
+          {Object.entries(repStatus).map(([k, n]) => <BarRow key={k} t={t} label={STATUS_LABEL[k]} value={n} max={maxRep} right={n} color={k === "resolved" ? t.green : k === "open" ? t.red : t.orange} />)}
+          <div style={{ height: 1, background: t.borderLight, margin: "4px 0" }} />
+          {Object.entries(repPrio).map(([k, n]) => <BarRow key={k} t={t} label={`${k} priority`} value={n} max={maxRep} right={n} color={k === "high" ? t.red : k === "medium" ? t.orange : t.green} />)}
+        </Panel>
+      </div>
+
+      <div className="sa-two">
+        <Panel t={t} title="Top shops by revenue">
+          {topRevenue.map((s) => (
+            <button key={s.shopId} onClick={() => setOpenShopId(s.shopId)} className="sa-row-btn" style={{ background: "transparent", border: "none", padding: 0, textAlign: "left", color: t.textPrimary }}>
+              <BarRow t={t} label={s.shopName} value={s.totalRevenue || 0} max={maxTopRev} right={inr(s.totalRevenue)} color={t.green} />
+            </button>
+          ))}
+        </Panel>
+        <Panel t={t} title="Top shops by users">
+          {topUsers.map((s) => (
+            <button key={s.shopId} onClick={() => setOpenShopId(s.shopId)} className="sa-row-btn" style={{ background: "transparent", border: "none", padding: 0, textAlign: "left", color: t.textPrimary }}>
+              <BarRow t={t} label={s.shopName} value={s.totalUsers || 0} max={maxTopUsers} right={`${s.totalUsers || 0} users`} />
+            </button>
+          ))}
+        </Panel>
+      </div>
+
+      <div className="sa-two">
+        <Panel t={t} title={`Expiring in 7 days (${expiring.length})`}>
+          {expiring.length === 0 ? <p style={{ fontSize: 12.5, color: t.textMuted, margin: 0 }}>Koi plan jaldi expire nahi ho raha.</p> : expiring.slice(0, 6).map((s) => (
+            <button key={s.shopId} onClick={() => setOpenShopId(s.shopId)} className="sa-row-btn" style={rowBtn(t, t.orange)}>
+              <span style={{ fontWeight: 600 }}>{s.shopName} · {s.plan}</span>
+              <span style={{ color: t.textMuted, fontSize: 11.5 }}>{new Date(s.expiresAt).toLocaleDateString("en-IN")} · {dayLeft(s.expiresAt)} din bache</span>
+            </button>
+          ))}
+        </Panel>
+        <Panel t={t} title={`Expired plans (${expired.length})`}>
+          {expired.length === 0 ? <p style={{ fontSize: 12.5, color: t.textMuted, margin: 0 }}>Koi expired plan nahi.</p> : expired.slice(0, 6).map((s) => (
+            <button key={s.shopId} onClick={() => setOpenShopId(s.shopId)} className="sa-row-btn" style={rowBtn(t, t.red)}>
+              <span style={{ fontWeight: 600 }}>{s.shopName} · {s.plan}</span>
+              <span style={{ color: t.textMuted, fontSize: 11.5 }}>{new Date(s.expiresAt).toLocaleDateString("en-IN")} ko expire hua · {s.ownerEmail}</span>
+            </button>
+          ))}
+        </Panel>
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <Panel t={t} title="Shop-wise data">
+          <div style={{ position: "relative" }}>
+            <input value={shopSearch} onChange={(e) => setShopSearch(e.target.value)} placeholder="Shop ka naam, ID ya owner email search karo..." aria-label="Search shop for data" style={{ ...field, width: "100%", boxSizing: "border-box" }} />
+            {matches.length > 0 && (
+              <div style={{ marginTop: 6, border: `1px solid ${t.border}`, borderRadius: 11, overflow: "hidden", background: t.bgCard }}>
+                {matches.map((s, i) => (
+                  <button key={s.shopId} onClick={() => pickShop(s)} className="sa-row sa-row-btn" style={{ display: "flex", flexDirection: "column", gap: 2, width: "100%", textAlign: "left", padding: "9px 12px", background: "transparent", border: "none", borderBottom: i < matches.length - 1 ? `1px solid ${t.borderLight}` : "none", color: t.textPrimary, fontSize: 12.5 }}>
+                    <span style={{ fontWeight: 600 }}>{s.shopName}</span>
+                    <span style={{ fontSize: 11, color: t.textMuted }}>{s.shopId} · {s.ownerEmail}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {!picked && <p style={{ margin: 0, fontSize: 12.5, color: t.textMuted }}>Kisi shop ko select karo — uske products, orders, invoices jaise saare records ka count dikhega.</p>}
+          {picked && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ padding: "12px 14px", borderRadius: 12, background: t.bgPage, border: `1px solid ${t.borderLight}` }}>
+                <p style={{ margin: 0, fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14 }}>{picked.shopName} <span style={{ fontSize: 11.5, color: t.textMuted, fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>({picked.shopId})</span></p>
+                <p style={{ margin: "4px 0 0", fontSize: 11.5, color: t.textMuted }}>
+                  {picked.ownerName} · {picked.ownerEmail} · {picked.plan} plan · {picked.status} · {picked.totalUsers || 0} users · {inr(picked.totalRevenue)} revenue{picked.expiresAt ? ` · expires ${new Date(picked.expiresAt).toLocaleDateString("en-IN")}` : ""}
+                </p>
+                <div style={{ marginTop: 8 }}><DrawerBtn t={t} color={t.accent} onClick={() => setOpenShopId(picked.shopId)}>Open full shop details</DrawerBtn></div>
+              </div>
+              {loadingShop && <Skeleton t={t} n={2} h={34} />}
+              {shopErr && <ErrorBox t={t} message={shopErr} onRetry={() => pickShop(picked)} compact />}
+              {shopData && (shopData.collections.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 12.5, color: t.textMuted }}>Is shop ke naam pe kisi collection me record nahi mila (ya collections me shopId field nahi hai).</p>
+              ) : shopData.collections.map((c) => (
+                <BarRow key={c.name} t={t} label={c.name} value={c.count} max={shopData.collections[0].count} right={`${c.count.toLocaleString("en-IN")} records`} />
+              )))}
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      <Panel t={t} title="All database collections">
+        {insQ.error && !ins ? <ErrorBox t={t} message={insQ.error} onRetry={insQ.reload} compact /> : !ins ? <Skeleton t={t} n={3} h={36} /> : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <p style={{ margin: 0, fontSize: 12.5, color: t.textMuted }}>
+                {collections.length} collections · <strong style={{ color: t.textPrimary }}>{Number(ins.totals?.documents || 0).toLocaleString("en-IN")}</strong> documents · {fmtBytes(ins.totals?.size)}
+              </p>
+              <button onClick={exportCollections} className="sa-btn" style={expBtn}>Export CSV</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6 }}>
+              {collections.map((c) => (
+                <BarRow key={c.name} t={t} label={c.internal ? `${c.name} (security)` : c.name} value={c.count} max={maxDocs} right={`${c.count.toLocaleString("en-IN")} docs${c.size ? ` · ${fmtBytes(c.size)}` : ""}`} color={c.internal ? t.textMuted : t.accent} />
+              ))}
+            </div>
+          </>
+        )}
+      </Panel>
+    </>
+  );
+}
+
 /* ═════════════════ SYSTEM (database status) ═════════════════ */
 function SystemTab({ t, gradient, dbQ }) {
   const db = dbQ.data;
@@ -927,16 +1228,26 @@ function SystemTab({ t, gradient, dbQ }) {
 }
 
 /* ═════════════════ SESSIONS & SECURITY ═════════════════ */
+const placeOf = (x) => [x.city, x.country].filter(Boolean).join(", ") || "Location unknown";
+
 function SecurityTab({ t, api, toast, confirmAction, version, alertsQ }) {
   const sessQ = useData(api, "/security/sessions", { poll: 30000, dep: version });
+  const loginsQ = useData(api, "/security/logins", { poll: 30000, dep: version });
+  const blockedQ = useData(api, "/security/blocked-ips", { dep: version });
+  const sumQ = useData(api, "/security/summary", { poll: 30000, dep: version });
   const [busy, setBusy] = useState(null);
+  const [newIp, setNewIp] = useState("");
   const sessions = sessQ.data;
   const alerts = alertsQ.data || [];
+  const logins = (loginsQ.data || []).slice(0, 12);
+  const blocked = blockedQ.data || [];
+  const sum = sumQ.data || {};
 
   if (sessQ.error && !sessions) return <ErrorBox t={t} message={sessQ.error} onRetry={sessQ.reload} />;
   if (sessions === null) return <Skeleton t={t} n={3} h={68} />;
 
-  const reloadAll = () => Promise.all([sessQ.reload(), alertsQ.reload()]);
+  const reloadAll = () => Promise.all([sessQ.reload(), alertsQ.reload(), loginsQ.reload(), blockedQ.reload(), sumQ.reload()]);
+  const riskColor = { high: t.red, medium: t.orange, low: t.green };
 
   const revoke = async (s) => {
     const ok = await confirmAction({
@@ -975,41 +1286,79 @@ function SecurityTab({ t, api, toast, confirmAction, version, alertsQ }) {
     try {
       await api(`/security/alerts/${a._id}`, { method: "PATCH", body: JSON.stringify({ dismissed: true }) });
       alertsQ.setData((p) => (p || []).filter((x) => x._id !== a._id));
+      sumQ.reload();
     } catch (e) { toast.error(e.message); } finally { setBusy(null); }
   };
 
-  const sevColor = { high: t.red, medium: t.orange };
+  const blockIp = async (ip, reason, skipConfirm = false) => {
+    if (!ip) return;
+    if (!skipConfirm) {
+      const ok = await confirmAction({
+        title: `Block IP ${ip}?`,
+        message: "Is IP se koi bhi request nahi chalegi aur iske saare sessions logout ho jayenge.",
+        confirmLabel: "Block IP",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    setBusy(`ip-${ip}`);
+    try {
+      await api("/security/blocked-ips", { method: "POST", body: JSON.stringify({ ip, reason }) });
+      toast.success(`${ip} block ho gaya.`);
+      setNewIp("");
+      reloadAll();
+    } catch (e) { toast.error(e.message); } finally { setBusy(null); }
+  };
+
+  const unblock = async (b) => {
+    setBusy(b._id);
+    try {
+      await api(`/security/blocked-ips/${b._id}`, { method: "DELETE" });
+      toast.success(`${b.ip} unblock ho gaya.`);
+      reloadAll();
+    } catch (e) { toast.error(e.message); } finally { setBusy(null); }
+  };
+
   const others = sessions.filter((s) => !s.isCurrent).length;
+  const alertTitle = (a) => (a.type === "brute_force" ? "Brute-force attempt" : "Suspicious login");
 
   return (
     <>
+      <div className="sa-stats">
+        <MiniStat t={t} label="Active sessions" value={sum.activeSessions ?? sessions.length} />
+        <MiniStat t={t} label="Suspicious sessions" value={sum.suspiciousSessions ?? 0} color={(sum.suspiciousSessions || 0) > 0 ? t.red : undefined} />
+        <MiniStat t={t} label="Failed logins (24h)" value={sum.failed24h ?? 0} color={(sum.failed24h || 0) >= 5 ? t.orange : undefined} />
+        <MiniStat t={t} label="Blocked IPs" value={sum.blockedIps ?? blocked.length} />
+      </div>
+
       {alerts.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 22 }}>
           <p style={{ fontSize: 12.5, fontWeight: 700, color: t.red, margin: "0 0 10px", display: "flex", alignItems: "center", gap: 8 }}>
-            <Icon name="alert" size={14} /> Suspicious login alerts ({alerts.length})
+            <Icon name="alert" size={14} /> Security alerts ({alerts.length})
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {alerts.map((a) => {
-              const live = sessions.some((s) => s._id === a.sessionId);
-              const c = sevColor[a.severity] || t.orange;
+              const liveSession = a.sessionId ? sessions.find((s) => s._id === a.sessionId) : null;
+              const c = a.severity === "high" ? t.red : t.orange;
               return (
                 <div key={a._id} style={{ padding: "14px 16px", borderRadius: 14, background: t.bgCard, border: `1px solid ${c}40`, borderLeft: `3px solid ${c}`, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                  <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+                  <div style={{ flex: "1 1 260px", minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 700, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      {a.ip}
-                      <Pill color={c} bg={`${c}1c`}>{a.severity}</Pill>
+                      {alertTitle(a)} · {a.ip}
+                      <Pill color={c} bg={`${c}1c`}>{a.severity}{a.risk ? ` · risk ${a.risk}` : ""}</Pill>
                     </p>
-                    <p style={{ margin: "4px 0 0", fontSize: 11.5, color: t.textMuted }}>{a.device} · {a.adminEmail} · {timeAgo(a.createdAt)}</p>
+                    <p style={{ margin: "4px 0 0", fontSize: 11.5, color: t.textMuted }}>
+                      {placeOf(a)} · {a.device || "Unknown device"}{a.adminEmail ? ` · ${a.adminEmail}` : ""} · {timeAgo(a.createdAt)}
+                    </p>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                       {(a.reasons || []).map((r) => (
                         <span key={r} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 99, background: `${c}14`, color: c, fontWeight: 600 }}>{r}</span>
                       ))}
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8, opacity: busy === a._id ? 0.5 : 1 }}>
-                    {live && (
-                      <DrawerBtn t={t} color={t.red} onClick={() => revoke(sessions.find((s) => s._id === a.sessionId))}>Force logout</DrawerBtn>
-                    )}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", opacity: busy === a._id ? 0.5 : 1 }}>
+                    {liveSession && !liveSession.isCurrent && <DrawerBtn t={t} color={t.red} onClick={() => revoke(liveSession)}>Force logout</DrawerBtn>}
+                    {a.ip && <DrawerBtn t={t} color={t.orange} onClick={() => blockIp(a.ip, `${alertTitle(a)} alert`)}>Block IP</DrawerBtn>}
                     <DrawerBtn t={t} color={t.textMuted} onClick={() => dismiss(a)}>Dismiss</DrawerBtn>
                   </div>
                 </div>
@@ -1032,43 +1381,95 @@ function SecurityTab({ t, api, toast, confirmAction, version, alertsQ }) {
       </div>
 
       {sessions.length === 0 ? (
-        <Empty t={t} title="Koi active session nahi" sub="Login karne par yahan IP aur device dikhega." />
+        <Empty t={t} title="Koi active session nahi" sub="Login karne par yahan IP, device aur location dikhega." />
       ) : (
-        <div style={{ border: `1px solid ${t.border}`, borderRadius: 18, overflow: "hidden", background: t.bgCard }}>
-          {sessions.map((s, i) => (
-            <div key={s._id} className="sa-row sa-shop-row" style={{
-              borderBottom: i < sessions.length - 1 ? `1px solid ${t.borderLight}` : "none",
-              borderLeft: `3px solid ${s.suspicious ? t.red : "transparent"}`,
-            }}>
-              <div className="sa-shop-main" style={{ cursor: "default" }}>
-                <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: 0 }}>
-                  {s.ip}
-                  {s.isCurrent && <Pill color={t.green} bg={`${t.green}1c`}>This device</Pill>}
-                  {s.suspicious && <Pill color={t.red} bg={`${t.red}1c`}>Suspicious</Pill>}
-                </p>
-                <p style={{ fontSize: 11.5, color: t.textMuted, margin: "5px 0 0" }}>
-                  {s.device || "Unknown device"} · {s.adminEmail} · login {fmtDateTime(s.createdAt)} · last active {timeAgo(s.lastActiveAt)}
-                </p>
-                {s.suspicious && (s.reasons || []).length > 0 && (
-                  <p style={{ fontSize: 11, color: t.red, margin: "4px 0 0" }}>{s.reasons.join(" · ")}</p>
+        <div style={{ border: `1px solid ${t.border}`, borderRadius: 18, overflow: "hidden", background: t.bgCard, marginBottom: 20 }}>
+          {sessions.map((s, i) => {
+            const rc = riskColor[s.riskLevel] || t.green;
+            return (
+              <div key={s._id} className="sa-row sa-shop-row" style={{
+                borderBottom: i < sessions.length - 1 ? `1px solid ${t.borderLight}` : "none",
+                borderLeft: `3px solid ${s.suspicious ? rc : "transparent"}`,
+              }}>
+                <div className="sa-shop-main" style={{ cursor: "default" }}>
+                  <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: 0 }}>
+                    {s.ip}
+                    {s.isCurrent && <Pill color={t.green} bg={`${t.green}1c`}>This device</Pill>}
+                    <Pill color={rc} bg={`${rc}1c`}>{s.riskLevel} risk · {s.risk}</Pill>
+                  </p>
+                  <p style={{ fontSize: 11.5, color: t.textMuted, margin: "5px 0 0" }}>
+                    {placeOf(s)} · {s.device || "Unknown device"} · {s.adminEmail} · login {fmtDateTime(s.createdAt)} · last active {timeAgo(s.lastActiveAt)}
+                  </p>
+                  {s.suspicious && (s.reasons || []).length > 0 && (
+                    <p style={{ fontSize: 11, color: rc, margin: "4px 0 0" }}>{s.reasons.join(" · ")}</p>
+                  )}
+                </div>
+                {!s.isCurrent && (
+                  <div className="sa-shop-actions">
+                    <button onClick={() => revoke(s)} disabled={busy === s._id} className="sa-btn" style={{
+                      padding: "8px 16px", borderRadius: 10, fontSize: 11.5, fontWeight: 700, border: `1px solid ${t.red}60`,
+                      color: t.red, background: t.redBg, cursor: "pointer", opacity: busy === s._id ? 0.5 : 1,
+                    }}>
+                      <Icon name="power" size={13} /> Force logout
+                    </button>
+                    <button onClick={() => blockIp(s.ip, "Blocked from sessions list")} disabled={busy === `ip-${s.ip}`} className="sa-btn" style={{
+                      padding: "8px 16px", borderRadius: 10, fontSize: 11.5, fontWeight: 700, border: `1px solid ${t.border}`,
+                      color: t.textMuted, background: t.bgPage, cursor: "pointer",
+                    }}>
+                      Block IP
+                    </button>
+                  </div>
                 )}
               </div>
-              {!s.isCurrent && (
-                <div className="sa-shop-actions">
-                  <button onClick={() => revoke(s)} disabled={busy === s._id} className="sa-btn" style={{
-                    padding: "8px 16px", borderRadius: 10, fontSize: 11.5, fontWeight: 700, border: `1px solid ${t.red}60`,
-                    color: t.red, background: t.redBg, cursor: "pointer", opacity: busy === s._id ? 0.5 : 1,
-                  }}>
-                    <Icon name="power" size={13} /> Force logout
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-      <p style={{ fontSize: 11.5, color: t.textMuted, margin: "12px 2px 0" }}>
-        Force logout agle request par lagu hota hai (dashboard har 60 sec me data poll karta hai).
+
+      <div className="sa-two">
+        <Panel t={t} title="Login history">
+          {loginsQ.data === null ? <Skeleton t={t} n={2} h={40} /> : logins.length === 0 ? (
+            <p style={{ fontSize: 12.5, color: t.textMuted, margin: 0 }}>Abhi koi login attempt record nahi hua.</p>
+          ) : logins.map((l) => (
+            <div key={l._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, background: t.bgPage, border: `1px solid ${t.borderLight}` }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: l.success ? t.green : t.red }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {l.success ? "Login" : "Failed login"} · {l.email || "unknown"}
+                </p>
+                <p style={{ margin: "2px 0 0", fontSize: 11, color: t.textMuted }}>{l.ip} · {placeOf(l)}</p>
+              </div>
+              <span style={{ fontSize: 11, color: t.textMuted, whiteSpace: "nowrap" }}>{timeAgo(l.createdAt)}</span>
+            </div>
+          ))}
+        </Panel>
+
+        <Panel t={t} title="Blocked IPs">
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={newIp} onChange={(e) => setNewIp(e.target.value)} placeholder="IP address, e.g. 103.21.4.5" aria-label="IP to block"
+              style={{ flex: 1, minWidth: 0, padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.bgPage, color: t.textPrimary, fontSize: 12.5, outline: "none" }}
+            />
+            <DrawerBtn t={t} color={t.red} onClick={() => blockIp(newIp.trim(), "Blocked manually", true)}>Block</DrawerBtn>
+          </div>
+          {blockedQ.data === null ? <Skeleton t={t} n={1} h={40} /> : blocked.length === 0 ? (
+            <p style={{ fontSize: 12.5, color: t.textMuted, margin: "4px 0 0" }}>Koi IP block nahi hai.</p>
+          ) : blocked.map((b) => (
+            <div key={b._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, background: t.bgPage, border: `1px solid ${t.borderLight}`, opacity: busy === b._id ? 0.5 : 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700 }}>{b.ip}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 11, color: t.textMuted }}>
+                  {b.reason || "Blocked"}{b.expiresAt ? ` · auto-unblock ${fmtDateTime(b.expiresAt)}` : " · permanent"}
+                </p>
+              </div>
+              <DrawerBtn t={t} color={t.green} onClick={() => unblock(b)}>Unblock</DrawerBtn>
+            </div>
+          ))}
+        </Panel>
+      </div>
+
+      <p style={{ fontSize: 11.5, color: t.textMuted, margin: "4px 2px 0", lineHeight: 1.6 }}>
+        Force logout agle request par lagu hota hai (dashboard har 60 sec me poll karta hai). 5 galat login attempts ke baad login 15 min ke liye lock ho jata hai; 15+ attempts par IP 24 ghante ke liye auto-block hota hai.
       </p>
     </>
   );
